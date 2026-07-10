@@ -52,7 +52,7 @@ export default function Layout({ user, onLogout, currentTab, children }) {
         </div>
 
         {/* Navigation */}
-        <nav style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
+        <nav className="sidebar-scroll" style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2, overflowY: 'auto', paddingRight: '4px', marginBottom: '12px' }}>
           {user.role === 'SUPER_ADMIN' ? (
             <>
               <SectionLabel>Management</SectionLabel>
