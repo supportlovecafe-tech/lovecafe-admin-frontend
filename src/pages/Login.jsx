@@ -218,12 +218,7 @@ export default function Login({ onLogin }) {
                   setLoading(true);
                   setError('');
                   try {
-                    // Clear any existing stale session or lock first
-                    for (let key in localStorage) {
-                      if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
-                        localStorage.removeItem(key);
-                      }
-                    }
+                    // Ensure any old session is signed out cleanly without breaking Supabase locks
                     await supabase.auth.signOut().catch(() => {});
                     
                     const { data, error } = await supabase.auth.signInWithIdToken({

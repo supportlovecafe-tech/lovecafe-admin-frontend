@@ -22,7 +22,7 @@ function App() {
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Check for persisted session in localStorage and Supabase Auth (for OAuth)
+  // Check for persisted session in localStorage
   useEffect(() => {
     const saved = localStorage.getItem('ce_admin_profile')
     if (saved) {
@@ -30,51 +30,7 @@ function App() {
         setUserProfile(JSON.parse(saved))
       } catch (_) {}
     }
-
-    // Listen for Supabase OAuth login callbacks
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        // Fetch the profile for the authenticated Google user by EMAIL
-        // since the Super Admin creates profiles by email before the user ever logs in via OAuth
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('email', session.user.email)
-          .single();
-
-        if (profile) {
-          // Optional: Update the profile with the user's actual auth UUID if it's missing
-          if (profile.id !== session.user.id) {
-            await supabase.from('profiles').update({ id: session.user.id }).eq('email', session.user.email);
-            profile.id = session.user.id;
-          }
-
-          const fullProfile = { ...profile, email: session.user.email };
-          localStorage.setItem('ce_admin_profile', JSON.stringify(fullProfile));
-          setUserProfile(fullProfile);
-        } else {
-          // Check if they are an Outlet Manager (in cinemas table)
-          const { data: cinema } = await supabase
-            .from('cinemas')
-            .select('*')
-            .eq('login_email', session.user.email)
-            .single();
-            
-          if (!cinema) {
-            // If no profile and no cinema exists, they are completely unauthorized
-            supabase.auth.signOut();
-          }
-          // If cinema exists, we do NOT set userProfile yet.
-          // Login.jsx will handle the PIN screen and call onLogin when verified.
-        }
-      }
-    });
-
     setLoading(false)
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
   }, [])
 
   const handleLogin = (profile) => {
