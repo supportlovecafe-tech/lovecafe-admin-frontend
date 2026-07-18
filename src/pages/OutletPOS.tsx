@@ -790,15 +790,7 @@ export default function OutletPOS({ user }: { user: any }) {
                         </div>
 
                         {/* Customer Copy */}
-                        <div style={{ flex: 1, border: '1px solid #ccc', padding: '24px', fontFamily: 'monospace', position: 'relative', overflow: 'hidden', minHeight: '500px' }}>
-                            {/* Bill Background (converted from PDF) */}
-                            <img 
-                                src="/bill_bg.png" 
-                                alt=""
-                                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0, opacity: 0.15 }} 
-                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                            />
-                            
+                        <div className="receipt-modal" style={{ flex: 1, border: '1px solid #ccc', padding: '24px', fontFamily: 'monospace', position: 'relative', overflow: 'hidden', minHeight: '500px', background: 'white', color: 'black' }}>
                             <div style={{ position: 'relative', zIndex: 1 }}>
                                 <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '2px solid #000', paddingBottom: '10px' }}>
                                     <h3 style={{ margin: '0 0 8px 0', fontSize: '24px' }}>LOVE CAFE</h3>
