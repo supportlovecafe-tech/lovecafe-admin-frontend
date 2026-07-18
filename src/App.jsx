@@ -49,7 +49,7 @@ function App() {
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
         <div style={{ textAlign: 'center' }}>
           <div className="spinner" />
-          <p style={{ color: 'var(--text-muted)', marginTop: 16, fontSize: 14 }}>Loading CinemaEats...</p>
+          <p style={{ color: 'var(--text-muted)', marginTop: 16, fontSize: 14 }}>Loading Love Cafe...</p>
         </div>
       </div>
     )

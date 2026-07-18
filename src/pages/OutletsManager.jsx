@@ -17,7 +17,8 @@ export default function OutletsManager() {
     feature: '', 
     imageUrl: '',
     screenCount: '', // Changed to string to handle empty/null easily in UI
-    loginEmail: ''
+    loginEmail: '',
+    outletNumber: ''
   });
 
   useEffect(() => {
@@ -37,7 +38,7 @@ export default function OutletsManager() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', location: '', feature: '', imageUrl: '', screenCount: '', loginEmail: '' });
+    setFormData({ name: '', location: '', feature: '', imageUrl: '', screenCount: '', loginEmail: '', outletNumber: '' });
     setIsEditing(false);
     setCurrentId(null);
   };
@@ -49,7 +50,8 @@ export default function OutletsManager() {
         feature: cinema.feature || '',
         imageUrl: cinema.image_url || '',
         screenCount: cinema.screens?.length?.toString() || '0',
-        loginEmail: cinema.login_email || ''
+        loginEmail: cinema.login_email || '',
+        outletNumber: cinema.outlet_number || ''
     });
     setIsEditing(true);
     setCurrentId(cinema.id);
@@ -112,7 +114,7 @@ export default function OutletsManager() {
     if (isEditing) {
         const { error } = await supabase.from('cinemas').update({ 
             name: formData.name, location: formData.location, feature: formData.feature, image_url: formData.imageUrl,
-            login_email: formData.loginEmail || null
+            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null
         }).eq('id', currentId);
         
         if (error) alert(error.message);
@@ -143,7 +145,7 @@ export default function OutletsManager() {
 
         const { data: cinema, error: cinemaErr } = await supabase.from('cinemas').insert([{ 
             name: formData.name, location: formData.location, feature: formData.feature, image_url: formData.imageUrl,
-            login_email: formData.loginEmail || null
+            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null
         }]).select().single();
 
         if (cinemaErr) alert(cinemaErr.message);
@@ -206,6 +208,11 @@ export default function OutletsManager() {
                             </div>
                             <div style={{ padding: '20px' }}>
                                 <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{cinema.name}</h3>
+                                {cinema.outlet_number && (
+                                    <div style={{ fontSize: '12px', color: 'var(--accent-gold)', fontWeight: 'bold', marginTop: '2px' }}>
+                                        Outlet #{cinema.outlet_number}
+                                    </div>
+                                )}
                                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
                                     <MapPin size={14} /> {cinema.location}
                                 </div>
@@ -250,9 +257,15 @@ export default function OutletsManager() {
                 </div>
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div className="input-group">
-                        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Identity</label>
-                        <input className="input-premium" placeholder="Outlet Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
+                        <div className="input-group">
+                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Identity</label>
+                            <input className="input-premium" placeholder="Outlet Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+                        </div>
+                        <div className="input-group">
+                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Outlet #</label>
+                            <input className="input-premium" placeholder="e.g. 101" value={formData.outletNumber} onChange={e => setFormData({...formData, outletNumber: e.target.value})} />
+                        </div>
                     </div>
 
                     <div className="input-group">
@@ -324,7 +337,7 @@ export default function OutletsManager() {
                         <div style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '16px', letterSpacing: '1.5px' }}>Outlet Login Credentials</div>
                         <div className="input-group" style={{ marginBottom: '16px' }}>
                             <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Authorized Google Email</label>
-                            <input className="input-premium" placeholder="outlet@cinemaeats.com" value={formData.loginEmail} onChange={e => setFormData({...formData, loginEmail: e.target.value})} />
+                            <input className="input-premium" placeholder="outlet@lovecafe.com" value={formData.loginEmail} onChange={e => setFormData({...formData, loginEmail: e.target.value})} />
                         </div>
                     </div>
 

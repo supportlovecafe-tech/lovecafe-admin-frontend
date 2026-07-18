@@ -80,7 +80,7 @@ export default function Login({ onLogin }) {
                 <Film size={32} color="white" />
               </div>
               <div>
-                <h1 style={{ fontSize: 36, fontWeight: 900, letterSpacing: -2, margin: 0 }}>CinemaEats</h1>
+                <h1 style={{ fontSize: 36, fontWeight: 900, letterSpacing: -2, margin: 0 }}>Love Cafe</h1>
                 <div style={{ fontSize: 12, color: 'var(--primary-glow)', letterSpacing: 3, fontWeight: 700, textTransform: 'uppercase' }}>Admin Portal</div>
               </div>
             </div>
@@ -174,19 +174,19 @@ export default function Login({ onLogin }) {
               <Film size={32} color="white" />
             </div>
             <div>
-              <h1 style={{ fontSize: 36, fontWeight: 900, letterSpacing: -2, margin: 0 }}>CinemaEats</h1>
+              <h1 style={{ fontSize: 36, fontWeight: 900, letterSpacing: -2, margin: 0 }}>Love Cafe</h1>
               <div style={{ fontSize: 12, color: 'var(--primary-glow)', letterSpacing: 3, fontWeight: 700, textTransform: 'uppercase' }}>Admin Portal</div>
             </div>
           </div>
           <h2 style={{ fontSize: 28, fontWeight: 700, color: 'rgba(255,255,255,0.9)', marginBottom: 16, lineHeight: 1.3 }}>
-            The future of<br />cinema dining.
+            The future of<br />cafe dining.
           </h2>
           <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7 }}>
-            Multi-tenant management for cinema operators — menus, real-time orders, and analytics in one powerful dashboard.
+            Multi-tenant management for cafe operators — menus, real-time orders, and analytics in one powerful dashboard.
           </p>
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 32 }}>
-            {['Real-time Orders', 'PIN Authentication', 'Multi-Cinema', 'Staff Access'].map(f => (
+            {['Real-time Orders', 'PIN Authentication', 'Multi-Outlet', 'Staff Access'].map(f => (
               <div key={f} style={{ padding: '6px 14px', background: 'rgba(255,47,146,0.12)', border: '1px solid rgba(255,47,146,0.25)', borderRadius: 20, fontSize: 12, fontWeight: 700, color: 'var(--primary-glow)' }}>
                 {f}
               </div>
@@ -200,7 +200,7 @@ export default function Login({ onLogin }) {
         <div style={{ width: '100%', maxWidth: 420 }}>
           <div style={{ marginBottom: 48 }}>
             <h2 style={{ fontSize: 32, fontWeight: 900, marginBottom: 10, letterSpacing: -1 }}>Staff Entry</h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: 15 }}>Welcome back! Access your cinema dashboard.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: 15 }}>Welcome back! Access your cafe dashboard.</p>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>

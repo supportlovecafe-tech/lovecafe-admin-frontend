@@ -31,6 +31,7 @@ export default function OffersManager({ user }: { user: any }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [mapSearchTerm, setMapSearchTerm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Modal / Drawer state
@@ -472,7 +473,7 @@ export default function OffersManager({ user }: { user: any }) {
                   display: 'flex', 
                   flexDirection: 'column', 
                   justifyContent: 'space-between',
-                  height: '270px', 
+                  minHeight: '320px', 
                   position: 'relative', 
                   overflow: 'hidden',
                   borderColor: offer.is_active ? 'rgba(255,47,146,0.25)' : 'var(--glass-border)',
@@ -826,6 +827,18 @@ export default function OffersManager({ user }: { user: any }) {
                   Check the boxes of all catalog products participating in this offer.
                 </p>
 
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '12px', top: '10px', color: 'var(--text-muted)' }} />
+                  <input 
+                    type="text" 
+                    placeholder="Search menu items..." 
+                    value={mapSearchTerm}
+                    onChange={(e) => setMapSearchTerm(e.target.value)}
+                    className="input-premium"
+                    style={{ paddingLeft: '36px', paddingRight: '12px', paddingBottom: '8px', paddingTop: '8px', fontSize: '13px', minHeight: '36px' }}
+                  />
+                </div>
+
                 <div style={{ 
                   height: '320px', 
                   overflowY: 'auto', 
@@ -842,7 +855,7 @@ export default function OffersManager({ user }: { user: any }) {
                       No items found. Create some in Menu Editor!
                     </div>
                   ) : (
-                    foodItems.map(item => {
+                    foodItems.filter(item => item.name.toLowerCase().includes(mapSearchTerm.toLowerCase())).map(item => {
                       const isChecked = formData.selectedItemIds.includes(item.id);
                       return (
                         <div 

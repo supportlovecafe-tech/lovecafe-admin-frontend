@@ -18,7 +18,7 @@ export default function SetupRequired() {
 
             <h3 style={{ marginBottom: '12px', color: 'white' }}>2. Run the Setup Script</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                Copy the contents of <code>admin_setup.sql</code> located in your Cinema Eats folder, paste it into Supabase, and click RUN.
+                Copy the contents of <code>admin_setup.sql</code> located in your Love Cafe folder, paste it into Supabase, and click RUN.
             </p>
         </div>
 

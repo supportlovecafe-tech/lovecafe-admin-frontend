@@ -259,7 +259,7 @@ export default function StaffManager() {
 
               <div className="input-group">
                 <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Google Login Email (Optional)</label>
-                <input className="input-premium" type="email" placeholder="staff@cinemaeats.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                <input className="input-premium" type="email" placeholder="staff@lovecafe.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
               </div>
 
               <div className="input-group">

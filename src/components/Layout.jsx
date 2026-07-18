@@ -44,7 +44,7 @@ export default function Layout({ user, onLogout, currentTab, children }) {
             <Film size={24} color="white" />
           </div>
           <div>
-            <h2 style={{ fontSize: 20, margin: 0, fontWeight: 900, letterSpacing: -1 }}>CinemaEats</h2>
+            <h2 style={{ fontSize: 20, margin: 0, fontWeight: 900, letterSpacing: -1 }}>Love Cafe</h2>
             <div style={{ fontSize: 10, color: 'var(--primary-glow)', textTransform: 'uppercase', letterSpacing: 2, fontWeight: 800, marginTop: 2 }}>
               {(user.role || '').replace(/_/g, ' ')}
             </div>

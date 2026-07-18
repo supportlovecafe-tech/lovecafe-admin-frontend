@@ -204,19 +204,7 @@ export default function OutletPOS({ user }: { user: any }) {
             // Local fallback if offline
             const st = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             
-            let feeTaxableSubtotal = 0;
-            const applicableCategories = feeSettings?.applicable_categories || ['ALL'];
-            const posFeePercent = feeSettings?.pos_fee_percent !== undefined ? Number(feeSettings.pos_fee_percent) : 0.0;
-            
-            cart.forEach(item => {
-                const category = (item.food_category || item.category || '').toUpperCase();
-                const isCombo = item.is_combo === true;
-                if (applicableCategories.includes('ALL') || (!isCombo && applicableCategories.includes(category))) {
-                    feeTaxableSubtotal += (item.price * item.quantity);
-                }
-            });
-            
-            const platformCharges = Math.round(feeTaxableSubtotal * (posFeePercent / 100) * 100) / 100;
+            const platformCharges = 0; // Default to 0 when offline
             const cgst = Math.round(st * 0.025 * 100) / 100;
             const sgst = Math.round(st * 0.025 * 100) / 100;
 
@@ -274,11 +262,15 @@ export default function OutletPOS({ user }: { user: any }) {
 
         const cinemaId = user?.cinema_id && user.cinema_id !== 'default' ? user.cinema_id : (foods[0]?.cinema_id || null);
         
-        // Fetch Cinema Name for Location String
+        // Fetch Cinema Name & Outlet Number for Location String
         let cinemaName = 'Outlet';
+        let outletNumber = '';
         if (cinemaId) {
-            const { data: cinemaData } = await supabase.from('cinemas').select('name').eq('id', cinemaId).single();
-            if (cinemaData) cinemaName = cinemaData.name;
+            const { data: cinemaData } = await supabase.from('cinemas').select('name, outlet_number').eq('id', cinemaId).single();
+            if (cinemaData) {
+                cinemaName = cinemaData.name;
+                outletNumber = cinemaData.outlet_number || '';
+            }
         }
 
         const locationString = `OUTLET, ${cinemaName}, ${screenNumber}, ${seatNumber}`;
@@ -312,14 +304,16 @@ export default function OutletPOS({ user }: { user: any }) {
             outlet_customer_id: outletCustomerId,
             status: 'PENDING',
             payment_status: 'PAID',
-            payment_method: paymentMode.toUpperCase(),
+            payment_method: paymentMode === 'Cash' ? 'POS_CASH' : paymentMode.toUpperCase(),
             timestamp: new Date().toISOString(),
             is_demo_order: true,
+            is_pos: true,
             metadata: {
                 subtotal,
                 cgst,
                 sgst,
-                platform_charges: platform_charges
+                platform_charges: platform_charges,
+                outlet_number: outletNumber
             }
         };
 
@@ -337,7 +331,17 @@ export default function OutletPOS({ user }: { user: any }) {
             });
 
             if (!response.ok) {
-                const errData = await response.json();
+                let errData;
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    errData = await response.json();
+                } else {
+                    const text = await response.text();
+                    if (response.status === 403 && text.includes("Checking your browser")) {
+                        throw new Error('Hostinger Bot Protection is blocking the API request. Please disable it in hPanel.');
+                    }
+                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                }
                 throw new Error(errData.error || 'Failed to place order');
             }
 
@@ -352,9 +356,15 @@ export default function OutletPOS({ user }: { user: any }) {
             setLastOrder(displayOrder);
             setShowReceipt(true);
             setCart([]); 
-        } catch (fetchError) {
+        } catch (fetchError: any) {
             console.error("Network error during order placement:", fetchError);
             
+            if (fetchError && fetchError.message && fetchError.message.includes('Bot Protection')) {
+                alert(fetchError.message);
+                setPlacingOrder(false);
+                return;
+            }
+
             // OFFLINE OUTBOX PATTERN
             const offlineOrder = {
                 ...orderData,
@@ -517,37 +527,30 @@ export default function OutletPOS({ user }: { user: any }) {
 
                 {/* Food Grid */}
                 <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
                     {filteredFoods.map(food => (
                         <div 
                             key={food.id} 
                             onClick={() => addToCart(food)}
                             className="glass-card" 
                             style={{ 
-                                padding: '16px', 
+                                padding: '20px 16px', 
                                 cursor: 'pointer', 
                                 transition: 'transform 0.1s',
                                 display: 'flex',
                                 flexDirection: 'column',
-                                gap: '12px'
+                                gap: '8px',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                textAlign: 'center',
+                                minHeight: '100px'
                             }}
                             onMouseDown={e => e.currentTarget.style.transform = 'scale(0.96)'}
                             onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
                             onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                         >
-                            <div style={{ 
-                                width: '100%', 
-                                height: '160px', 
-                                borderRadius: '12px',
-                                background: 'rgba(255,255,255,0.05)',
-                                backgroundImage: `url(${food.image_url})`,
-                                backgroundSize: 'cover',
-                                backgroundPosition: 'center'
-                            }} />
-                            <div>
-                                <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '4px' }}>{food.name}</div>
-                                <div style={{ color: 'var(--accent-gold)', fontWeight: '900', fontSize: '18px' }}>₹{food.price}</div>
-                            </div>
+                            <div style={{ fontWeight: 'bold', fontSize: '15px', lineHeight: '1.2' }}>{food.name}</div>
+                            <div style={{ color: 'var(--accent-gold)', fontWeight: '900', fontSize: '18px' }}>₹{food.price}</div>
                         </div>
                     ))}
                 </div>
@@ -783,17 +786,30 @@ export default function OutletPOS({ user }: { user: any }) {
                                     ))}
                                 </tbody>
                             </table>
+                            </div>
                         </div>
 
                         {/* Customer Copy */}
-                        <div style={{ flex: 1, border: '1px solid #ccc', padding: '24px', fontFamily: 'monospace' }}>
-                            <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '2px solid #000', paddingBottom: '10px' }}>
-                                <h3 style={{ margin: '0 0 8px 0', fontSize: '24px' }}>CINEMA EATS</h3>
-                                <div>Customer Receipt</div>
-                                <div>Order: {lastOrder.display_id}</div>
-                                <div>Time: {new Date(lastOrder.timestamp).toLocaleTimeString()}</div>
-                                <div style={{ marginTop: '8px', fontWeight: 'bold' }}>{lastOrder.location}</div>
-                            </div>
+                        <div style={{ flex: 1, border: '1px solid #ccc', padding: '24px', fontFamily: 'monospace', position: 'relative', overflow: 'hidden', minHeight: '500px' }}>
+                            {/* Bill Background (converted from PDF) */}
+                            <img 
+                                src="/bill_bg.png" 
+                                alt=""
+                                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0, opacity: 0.15 }} 
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            />
+                            
+                            <div style={{ position: 'relative', zIndex: 1 }}>
+                                <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '2px solid #000', paddingBottom: '10px' }}>
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '24px' }}>LOVE CAFE</h3>
+                                    <div>Customer Receipt</div>
+                                    {lastOrder.metadata?.outlet_number && (
+                                        <div style={{ fontWeight: 'bold', marginTop: '4px' }}>Outlet ID: {lastOrder.metadata.outlet_number}</div>
+                                    )}
+                                    <div>Order: {lastOrder.display_id}</div>
+                                    <div>Time: {new Date(lastOrder.timestamp).toLocaleTimeString()}</div>
+                                    <div style={{ marginTop: '8px', fontWeight: 'bold' }}>{lastOrder.location}</div>
+                                </div>
                             <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', marginBottom: '20px' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid #000' }}>
@@ -839,7 +855,7 @@ export default function OutletPOS({ user }: { user: any }) {
                                 <span>₹{lastOrder.total_amount.toFixed(2)}</span>
                             </div>
                             <div style={{ textAlign: 'center', marginTop: '30px', fontSize: '12px' }}>
-                                Thank you for choosing Cinema Eats!
+                                Thank you for choosing Love Cafe!
                             </div>
                         </div>
 
