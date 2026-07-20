@@ -257,6 +257,7 @@ export default function OrderHistory({ user }) {
             })}
           </tbody>
         </table>
+        </div>
         
         {/* Pagination */}
         <div style={{ padding: '20px', borderTop: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
