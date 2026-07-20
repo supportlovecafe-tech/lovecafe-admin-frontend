@@ -20,6 +20,7 @@ export default function OutletsManager() {
     loginEmail: '',
     outletNumber: ''
   });
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
 
   useEffect(() => {
     fetchCinemas();
@@ -91,7 +92,7 @@ export default function OutletsManager() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure? All screens and data for this outlet will be deleted.")) return;
+    setDeleteConfirmationId(null);
     setLoading(true);
     
     // First, delete any profiles (like outlet managers) associated with this cinema
@@ -203,7 +204,7 @@ export default function OutletsManager() {
                                 />
                                 <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: '8px' }}>
                                     <button onClick={() => handleOpenEdit(cinema)} style={{ background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', cursor: 'pointer' }}><Edit2 size={16} /></button>
-                                    <button onClick={() => handleDelete(cinema.id)} style={{ background: 'rgba(211,47,47,0.6)', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', cursor: 'pointer' }}><Trash2 size={16} /></button>
+                                    <button onClick={() => setDeleteConfirmationId(cinema.id)} style={{ background: 'rgba(211,47,47,0.6)', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', cursor: 'pointer' }}><Trash2 size={16} /></button>
                                 </div>
                             </div>
                             <div style={{ padding: '20px' }}>
@@ -361,6 +362,35 @@ export default function OutletsManager() {
             </div>
         </div>
       </div>
+
+      {/* Double Confirmation Modal */}
+      {deleteConfirmationId && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="glass-card animate-scale-up" style={{ padding: '32px', maxWidth: '400px', width: '90%', textAlign: 'center', border: '1px solid rgba(255,60,60,0.3)' }}>
+            <div style={{ background: 'rgba(255,60,60,0.1)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+              <Trash2 size={32} color="#ff6b6b" />
+            </div>
+            <h2 style={{ fontSize: '24px', fontWeight: '900', color: 'white', marginBottom: '12px' }}>Delete Outlet?</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '14px', lineHeight: '1.6' }}>
+              This is a permanent action. All screens, orders, and staff data for this outlet will be immediately destroyed. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                onClick={() => setDeleteConfirmationId(null)}
+                style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.05)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                CANCEL
+              </button>
+              <button 
+                onClick={() => handleDelete(deleteConfirmationId)}
+                style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #ff416c, #ff4b2b)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 8px 16px rgba(255,65,108,0.2)' }}
+              >
+                YES, DELETE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

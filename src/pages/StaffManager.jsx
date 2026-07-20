@@ -278,13 +278,23 @@ export default function StaffManager() {
               <div className="input-group">
                 <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Module Access</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  {['orders', 'menu', 'history', 'sales'].map(mod => (
-                    <label key={mod} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
-                      <input type="checkbox" checked={formData.permissions.includes(mod)} onChange={e => {
+                  {[
+                    { id: 'dashboard', label: 'Live POS' },
+                    { id: 'outlet-pos', label: 'Outlet POS' },
+                    { id: 'history', label: 'Order History' },
+                    { id: 'sales', label: 'Sales Analytics' },
+                    { id: 'menu', label: 'Menu Editor' },
+                    { id: 'combos', label: 'Combo Deals' },
+                    { id: 'offers', label: 'Promos & Offers' },
+                    { id: 'inventory', label: 'Inventory Stock' },
+                    { id: 'kds-config', label: 'KDS Routing' }
+                  ].map(mod => (
+                    <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      <input type="checkbox" checked={formData.permissions.includes(mod.id)} onChange={e => {
                         const checked = e.target.checked;
-                        setFormData(prev => ({ ...prev, permissions: checked ? [...prev.permissions, mod] : prev.permissions.filter(p => p !== mod) }));
+                        setFormData(prev => ({ ...prev, permissions: checked ? [...prev.permissions, mod.id] : prev.permissions.filter(p => p !== mod.id) }));
                       }} style={{ width: '14px', height: '14px', accentColor: 'var(--primary-glow)' }} />
-                      {mod === 'orders' ? 'Live Orders & POS' : mod === 'history' ? 'Order History' : mod === 'sales' ? 'Sales Dashboard' : mod}
+                      {mod.label}
                     </label>
                   ))}
                 </div>

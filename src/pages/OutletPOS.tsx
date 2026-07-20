@@ -439,6 +439,8 @@ export default function OutletPOS({ user }: { user: any }) {
 
 
 
+  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
+
   if (loading) {
       return (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -448,10 +450,11 @@ export default function OutletPOS({ user }: { user: any }) {
   }
 
   return (
-    <div style={{ display: 'flex', gap: '32px', height: 'calc(100vh - 80px)', overflow: 'hidden' }}>
+    <>
+    <div className="pos-container">
         
         {/* Left: Menu Catalog */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="pos-main">
             <header style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                     <h1 style={{ fontSize: '32px', marginBottom: '8px' }}>Walk-in POS</h1>
@@ -559,17 +562,18 @@ export default function OutletPOS({ user }: { user: any }) {
         </div>
 
         {/* Right: Cart Sidebar */}
-        <div className="glass-card" style={{ 
-            width: '420px', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '24px'
-        }}>
-            <div style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+        <div className={`pos-cart ${isMobileCartOpen ? 'cart-open' : ''}`}>
+            <div style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <ShoppingCart size={20} color="var(--primary-glow)" /> Current Order
                 </h2>
+                <button 
+                  className="mobile-cart-toggle" 
+                  style={{ position: 'static', width: 36, height: 36, boxShadow: 'none' }}
+                  onClick={() => setIsMobileCartOpen(false)}
+                >
+                  <X size={20} />
+                </button>
             </div>
             
             <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -856,6 +860,14 @@ export default function OutletPOS({ user }: { user: any }) {
             </div>
         )}
 
+        <button 
+          className="mobile-cart-toggle" 
+          onClick={() => setIsMobileCartOpen(!isMobileCartOpen)}
+        >
+          <ShoppingCart size={24} />
+          {cart.length > 0 && <div className="badge">{cart.length}</div>}
+        </button>
     </div>
+    </>
   );
 }

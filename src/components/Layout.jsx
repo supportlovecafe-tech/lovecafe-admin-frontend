@@ -64,11 +64,11 @@ export default function Layout({ user, onLogout, currentTab, children }) {
           ) : (
             <>
               <SectionLabel>Live Operations</SectionLabel>
-              {(!user.permissions || user.permissions.includes('orders')) && (
-                <>
-                  <NavItem icon={<Home size={20} />} label="Live POS" tabId="dashboard" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-                  <NavItem icon={<Store size={20} />} label="Outlet POS" tabId="outlet-pos" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-                </>
+              {(!user.permissions || user.permissions.includes('dashboard')) && (
+                <NavItem icon={<Home size={20} />} label="Live POS" tabId="dashboard" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              )}
+              {(!user.permissions || user.permissions.includes('outlet-pos')) && (
+                <NavItem icon={<Store size={20} />} label="Outlet POS" tabId="outlet-pos" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               )}
               {(!user.permissions || user.permissions.includes('history')) && (
                 <NavItem icon={<History size={20} />} label="Order History" tabId="history" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
@@ -79,16 +79,20 @@ export default function Layout({ user, onLogout, currentTab, children }) {
                 <NavItem icon={<PieChart size={20} />} label="Sales Analytics" tabId="sales" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               )}
               {(!user.permissions || user.permissions.includes('menu')) && (
-                <>
-                  <NavItem icon={<Coffee size={20} />}  label="Menu Editor"  tabId="menu"       currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-                  <NavItem icon={<Package size={20} />} label="Combo Deals"  tabId="combos"     currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-                  <NavItem icon={<Percent size={20} />} label="Promos & Offers" tabId="offers"  currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-                  <NavItem icon={<Archive size={20} />} label="Inventory Stock" tabId="inventory" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-                  <NavItem icon={<Monitor size={20} />} label="KDS Routing" tabId="kds-config" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-                </>
+                <NavItem icon={<Coffee size={20} />}  label="Menu Editor"  tabId="menu"       currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               )}
-              <SectionLabel style={{ marginTop: 16 }}>Observability</SectionLabel>
-              <NavItem icon={<Activity size={20} />} label="System Health" tabId="health" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              {(!user.permissions || user.permissions.includes('combos')) && (
+                <NavItem icon={<Package size={20} />} label="Combo Deals"  tabId="combos"     currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              )}
+              {(!user.permissions || user.permissions.includes('offers')) && (
+                <NavItem icon={<Percent size={20} />} label="Promos & Offers" tabId="offers"  currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              )}
+              {(!user.permissions || user.permissions.includes('inventory')) && (
+                <NavItem icon={<Archive size={20} />} label="Inventory Stock" tabId="inventory" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              )}
+              {(!user.permissions || user.permissions.includes('kds-config')) && (
+                <NavItem icon={<Monitor size={20} />} label="KDS Routing" tabId="kds-config" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              )}
             </>
           )}
         </nav>
@@ -127,56 +131,11 @@ export default function Layout({ user, onLogout, currentTab, children }) {
       }}>
         {children}
       </main>
-
-      {/* Mobile Bottom Navigation */}
-      <nav className="mobile-nav">
-        {user.role === 'SUPER_ADMIN' ? (
-          <>
-            <MobileNavItem icon={<Film size={20} />} label="Outlets" tabId="outlets" currentTab={currentTab} />
-            <MobileNavItem icon={<Activity size={20} />} label="Health" tabId="health" currentTab={currentTab} />
-            <MobileNavItem icon={<KeyRound size={20} />} label="Credentials" tabId="staff" currentTab={currentTab} />
-            <MobileNavItem icon={<LogOut size={20} />} label="Logout" onClick={onLogout} />
-          </>
-        ) : (
-          <>
-            {(!user.permissions || user.permissions.includes('orders')) && (
-              <>
-                <MobileNavItem icon={<Home size={20} />} label="Live" tabId="dashboard" currentTab={currentTab} />
-                <MobileNavItem icon={<Store size={20} />} label="Walk-in" tabId="outlet-pos" currentTab={currentTab} />
-              </>
-            )}
-            {(!user.permissions || user.permissions.includes('menu')) && (
-              <>
-                <MobileNavItem icon={<Coffee size={20} />} label="Menu" tabId="menu" currentTab={currentTab} />
-                <MobileNavItem icon={<Package size={20} />} label="Combos" tabId="combos" currentTab={currentTab} />
-              </>
-            )}
-            {(!user.permissions || user.permissions.includes('sales')) && (
-              <MobileNavItem icon={<PieChart size={20} />} label="Sales" tabId="sales" currentTab={currentTab} />
-            )}
-            {(!user.permissions || user.permissions.includes('history')) && (
-              <MobileNavItem icon={<History size={20} />} label="History" tabId="history" currentTab={currentTab} />
-            )}
-            <MobileNavItem icon={<Menu size={20} />} label="More" onClick={toggleSidebar} />
-          </>
-        )}
-      </nav>
     </div>
   );
 }
 
-function MobileNavItem({ icon, label, tabId, currentTab, onClick }) {
-  const active = tabId && tabId === currentTab;
-  return (
-    <button 
-      className={`mobile-nav-item ${active ? 'active' : ''}`}
-      onClick={() => tabId ? navigate(tabId) : onClick?.()}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
-}
+
 
 function SectionLabel({ children, style }) {
   return (

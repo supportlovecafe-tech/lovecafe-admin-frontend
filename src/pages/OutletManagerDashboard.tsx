@@ -73,9 +73,14 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
         .eq('cinema_id', user.cinema_id)
         .order('screen_number');
       if (data) {
-        setKdsConfigs(data);
-        if (data.length > 0) {
-          setActiveTab(data[0].screen_number);
+        const filteredData = data.filter(c => {
+          return c.assigned_staffs && c.assigned_staffs.includes(user.id);
+        });
+        setKdsConfigs(filteredData);
+        if (filteredData.length > 0) {
+          setActiveTab(filteredData[0].screen_number);
+        } else {
+          setActiveTab('OVERFLOW');
         }
       }
     } catch (e) {

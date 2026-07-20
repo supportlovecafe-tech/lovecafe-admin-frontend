@@ -176,7 +176,8 @@ export default function OrderHistory({ user }) {
       </div>
 
       {/* Results Table */}
-      <div className="glass-card" style={{ overflow: 'hidden' }}>
+      <div className="glass-card" style={{ padding: '24px', borderRadius: '16px' }}>
+        <div className="data-table-wrapper">
         <table className="data-table">
           <thead>
             <tr>

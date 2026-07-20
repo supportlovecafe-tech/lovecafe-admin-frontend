@@ -645,7 +645,6 @@ export default function InventoryManager({ user }: { user: any }) {
                             value={newMappingItem}
                             onChange={(e) => setNewMappingItem(e.target.value)}
                             className="input-premium"
-                            style={{ height: 44 }}
                             required
                           >
                             <option value="">-- Choose Stock Item --</option>
@@ -662,7 +661,6 @@ export default function InventoryManager({ user }: { user: any }) {
                             value={newMappingQty}
                             onChange={(e) => setNewMappingQty(e.target.value)}
                             className="input-premium"
-                            style={{ height: 44 }}
                             required
                             min="0.001"
                           />
@@ -670,7 +668,7 @@ export default function InventoryManager({ user }: { user: any }) {
                         <button
                           type="submit"
                           className="btn-lucrative"
-                          style={{ height: 44, padding: '0 24px', display: 'flex', alignItems: 'center', gap: 8, borderRadius: 12 }}
+                          style={{ padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, height: '100%' }}
                         >
                           <Plus size={16} /> Link Item
                         </button>

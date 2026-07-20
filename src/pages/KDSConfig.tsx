@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Monitor, Save, Loader2, CheckSquare, Square, Info, ShieldAlert } from 'lucide-react';
+import { Monitor, Save, Loader2, CheckSquare, Square, Info, ShieldAlert, Users } from 'lucide-react';
 
 interface ScreenConfig {
   id?: string;
@@ -8,6 +8,7 @@ interface ScreenConfig {
   screen_number: number;
   screen_name: string;
   assigned_categories: string[];
+  assigned_staffs?: string[];
 }
 
 const ALL_CATEGORIES = [
@@ -35,6 +36,7 @@ const ALL_CATEGORIES = [
 
 export default function KDSConfig({ user }: { user: any }) {
   const [configs, setConfigs] = useState<ScreenConfig[]>([]);
+  const [staffList, setStaffList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | null>(null);
 
@@ -46,6 +48,16 @@ export default function KDSConfig({ user }: { user: any }) {
     if (!user?.cinema_id) return;
     setLoading(true);
     try {
+      const { data: staffData } = await supabase
+        .from('profiles')
+        .select('id, full_name, role')
+        .eq('cinema_id', user.cinema_id)
+        .in('role', ['OUTLET_MANAGER', 'OUTLET_STAFF']);
+        
+      if (staffData) {
+        setStaffList(staffData);
+      }
+
       const { data, error } = await supabase
         .from('kds_screen_configs')
         .select('*')
@@ -62,7 +74,8 @@ export default function KDSConfig({ user }: { user: any }) {
           cinema_id: user.cinema_id,
           screen_number: i,
           screen_name: `KDS Station ${i}`,
-          assigned_categories: []
+          assigned_categories: [],
+          assigned_staffs: []
         });
       }
       setConfigs(populatedConfigs);
@@ -90,6 +103,18 @@ export default function KDSConfig({ user }: { user: any }) {
     }));
   };
 
+  const toggleStaff = (screenNum: number, staffId: string) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.screen_number !== screenNum) return c;
+      const assigned = c.assigned_staffs || [];
+      const exists = assigned.includes(staffId);
+      const updated = exists 
+        ? assigned.filter(x => x !== staffId)
+        : [...assigned, staffId];
+      return { ...c, assigned_staffs: updated };
+    }));
+  };
+
   const handleSave = async (screenNum: number) => {
     const configToSave = configs.find(c => c.screen_number === screenNum);
     if (!configToSave) return;
@@ -101,6 +126,7 @@ export default function KDSConfig({ user }: { user: any }) {
         screen_number: configToSave.screen_number,
         screen_name: configToSave.screen_name,
         assigned_categories: configToSave.assigned_categories,
+        assigned_staffs: configToSave.assigned_staffs || [],
         updated_at: new Date().toISOString()
       };
       if (configToSave.id) {
@@ -321,6 +347,43 @@ export default function KDSConfig({ user }: { user: any }) {
                           <span>On {owner}</span>
                         </div>
                       )}
+                    </div>
+                  );
+                })}
+
+                {/* Staff Assignment Section */}
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '12px', marginBottom: '4px', fontWeight: 'bold' }}>Assigned Staff (Optional)</div>
+                {staffList.length === 0 && (
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '10px 12px' }}>No staff members found for this cinema.</div>
+                )}
+                {staffList.map(staff => {
+                  const assigned = screen.assigned_staffs || [];
+                  const isChecked = assigned.includes(staff.id);
+                  
+                  return (
+                    <div 
+                      key={staff.id} 
+                      onClick={() => toggleStaff(num, staff.id)}
+                      style={{ 
+                        display: 'flex', alignItems: 'center', justifyBetween: 'space-between',
+                        padding: '10px 12px', 
+                        borderRadius: '10px', 
+                        background: isChecked ? 'rgba(76, 175, 80, 0.04)' : 'rgba(255,255,255,0.01)',
+                        border: isChecked ? '1px solid rgba(76, 175, 80, 0.2)' : '1px solid rgba(255,255,255,0.03)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                        {isChecked ? (
+                          <CheckSquare size={16} color="#4CAF50" />
+                        ) : (
+                          <Square size={16} color="rgba(255,255,255,0.2)" />
+                        )}
+                        <span style={{ fontSize: '13px', color: isChecked ? 'white' : 'rgba(255,255,255,0.7)' }}>
+                          {staff.full_name} <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>({staff.role === 'OUTLET_MANAGER' ? 'Manager' : 'Staff'})</span>
+                        </span>
+                      </div>
                     </div>
                   );
                 })}

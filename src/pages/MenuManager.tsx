@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
-import { Plus, Coffee, Tag, DollarSign, Image as ImageIcon, Search, Trash2, Edit2, CheckCircle, X, Upload, Loader2 } from 'lucide-react';
+import { Plus, Coffee, Tag, DollarSign, Image as ImageIcon, Search, Trash2, Edit2, CheckCircle, X, Upload, Loader2, Download } from 'lucide-react';
 import { Database } from '../lib/database.types';
 
 type FoodItem = Database['public']['Tables']['food_items']['Row'] & {
@@ -92,6 +92,48 @@ export default function MenuManager({ user }: { user: any }) {
       }
     }
     return items;
+  };
+
+  const downloadCsvTemplate = () => {
+    const headers = "ItemName,Category,Price,Description,Image,IsVeg,ApplyGst\n";
+    
+    if (menuItems.length === 0) {
+      const sample = "Salted Caramel Popcorn,SNACKS,250,Delicious popcorn,https://example.com/image.png,TRUE,TRUE\n";
+      const blob = new Blob([headers + sample], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'menu_bulk_upload_template.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    const rows = menuItems.map(item => {
+      const escapeCsv = (str: string) => {
+        if (!str) return '';
+        const escaped = str.toString().replace(/"/g, '""');
+        return `"${escaped}"`;
+      };
+      
+      return [
+        escapeCsv(item.name),
+        escapeCsv(item.category || ''),
+        item.price,
+        escapeCsv(item.description || ''),
+        escapeCsv(item.image_url || ''),
+        item.is_veg ? 'TRUE' : 'FALSE',
+        item.apply_gst ? 'TRUE' : 'FALSE'
+      ].join(',');
+    }).join('\n');
+
+    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'current_menu_export.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleBulkFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -667,6 +709,25 @@ export default function MenuManager({ user }: { user: any }) {
                     onChange={handleBulkFileChange} 
                     style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
                   />
+                </div>
+              )}
+
+              {/* Instructions / Template Download */}
+              {bulkFileItems.length === 0 && (
+                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    Make sure your CSV has these exact columns: <br/>
+                    <code style={{ fontSize: '11px', background: 'rgba(0,0,0,0.5)', padding: '4px 8px', borderRadius: '4px', display: 'inline-block', marginTop: '8px', color: 'var(--accent-gold)' }}>ItemName, Category, Price, Description, Image, IsVeg, ApplyGst</code>
+                  </div>
+                  <button 
+                    onClick={downloadCsvTemplate}
+                    style={{ background: 'rgba(0, 210, 255, 0.1)', color: '#00d2ff', border: '1px solid rgba(0, 210, 255, 0.2)', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(0, 210, 255, 0.2)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(0, 210, 255, 0.1)'}
+                  >
+                    <Download size={16} />
+                    Download Existing Menu (CSV)
+                  </button>
                 </div>
               )}
 
