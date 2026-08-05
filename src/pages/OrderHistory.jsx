@@ -57,7 +57,7 @@ export default function OrderHistory({ user }) {
   };
 
   const downloadFullTransactionReport = async () => {
-    let query = supabase.from('orders').select('timestamp, display_id, location, total_amount, payment_method, status, items');
+    let query = supabase.from('orders').select('timestamp, display_id, location, total_amount, payment_method, status, items, metadata');
     
     if (user.cinema_id && user.cinema_id !== 'default') {
         query = query.eq('cinema_id', user.cinema_id);
@@ -71,7 +71,7 @@ export default function OrderHistory({ user }) {
     if (error) { alert('Error generating report'); return; }
     if (!data || data.length === 0) { alert('No records found for the selected range'); return; }
 
-    const headers = ['Date', 'Time', 'Order ID', 'Location', 'Amount', 'Payment', 'Status', 'Items'];
+    const headers = ['Date', 'Time', 'Order ID', 'Location', 'Amount', 'Payment', 'Status', 'Items', 'Staff Email'];
     const rows = data.map(o => {
         const d = new Date(o.timestamp);
         const items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
@@ -85,7 +85,8 @@ export default function OrderHistory({ user }) {
             o.total_amount,
             o.payment_method,
             o.status,
-            itemsList
+            itemsList,
+            o.metadata?.staff_email || 'N/A'
         ];
     });
 
@@ -211,6 +212,9 @@ export default function OrderHistory({ user }) {
                   <td>
                     <div style={{ fontWeight: 'bold', fontSize: '15px' }}>{order.location}</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>#{order.display_id || order.id.substring(0,8).toUpperCase()}</div>
+                    {order.metadata?.staff_email && (
+                      <div style={{ fontSize: '11px', color: 'var(--accent-gold)', marginTop: '4px' }}>Staff: {order.metadata.staff_email}</div>
+                    )}
                   </td>
                   <td>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

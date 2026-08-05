@@ -16,7 +16,7 @@ export default function OutletsManager() {
     location: '', 
     feature: '', 
     imageUrl: '',
-    screenCount: '', // Changed to string to handle empty/null easily in UI
+    screens: [],
     loginEmail: '',
     outletNumber: ''
   });
@@ -39,7 +39,7 @@ export default function OutletsManager() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', location: '', feature: '', imageUrl: '', screenCount: '', loginEmail: '', outletNumber: '' });
+    setFormData({ name: '', location: '', feature: '', imageUrl: '', screens: [], loginEmail: '', outletNumber: '' });
     setIsEditing(false);
     setCurrentId(null);
   };
@@ -50,12 +50,32 @@ export default function OutletsManager() {
         location: cinema.location,
         feature: cinema.feature || '',
         imageUrl: cinema.image_url || '',
-        screenCount: cinema.screens?.length?.toString() || '0',
+        screens: cinema.screens || [],
         loginEmail: cinema.login_email || '',
         outletNumber: cinema.outlet_number || ''
     });
     setIsEditing(true);
     setCurrentId(cinema.id);
+  };
+
+  const handleAddScreen = () => {
+    setFormData(prev => ({
+        ...prev,
+        screens: [...prev.screens, { name: `Screen ${prev.screens.length + 1}`, tag: 'Standard' }]
+    }));
+  };
+
+  const handleRemoveScreen = (index) => {
+    setFormData(prev => ({
+        ...prev,
+        screens: prev.screens.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleScreenChange = (index, field, value) => {
+    const newScreens = [...formData.screens];
+    newScreens[index][field] = value;
+    setFormData(prev => ({ ...prev, screens: newScreens }));
   };
 
   const handleFileUpload = async (e) => {
@@ -109,9 +129,6 @@ export default function OutletsManager() {
     e.preventDefault();
     setLoading(true);
     
-    // Parse screenCount: treat empty as 0
-    const targetCount = formData.screenCount === '' ? 0 : parseInt(formData.screenCount);
-    
     if (isEditing) {
         const { error } = await supabase.from('cinemas').update({ 
             name: formData.name, location: formData.location, feature: formData.feature, image_url: formData.imageUrl,
@@ -120,20 +137,27 @@ export default function OutletsManager() {
         
         if (error) alert(error.message);
         else {
-            // Sync screens based on count
-            const { data: existingScreens } = await supabase.from('screens').select('id').eq('cinema_id', currentId).order('name');
-            const currentCount = existingScreens?.length || 0;
+            const { data: existingScreens } = await supabase.from('screens').select('id').eq('cinema_id', currentId);
             
-            if (targetCount > currentCount) {
-                const newScreens = Array.from({ length: targetCount - currentCount }, (_, i) => ({
-                    cinema_id: currentId, name: `Screen ${currentCount + i + 1}`, tag: i === 0 && currentCount === 0 ? 'IMAX' : 'Standard'
-                }));
-                await supabase.from('screens').insert(newScreens);
-            } else if (targetCount < currentCount) {
-                const screensToRemove = existingScreens.slice(targetCount).map(s => s.id);
-                if (screensToRemove.length > 0) {
-                  await supabase.from('screens').delete().in('id', screensToRemove);
-                }
+            const screensToInsert = formData.screens.filter(s => !s.id).map(s => ({
+                cinema_id: currentId,
+                name: s.name,
+                tag: s.tag
+            }));
+            
+            if (screensToInsert.length > 0) {
+                await supabase.from('screens').insert(screensToInsert);
+            }
+            
+            for (const screen of formData.screens.filter(s => s.id)) {
+                await supabase.from('screens').update({ name: screen.name, tag: screen.tag }).eq('id', screen.id);
+            }
+            
+            const newScreenIds = formData.screens.filter(s => s.id).map(s => s.id);
+            const screensToRemove = (existingScreens || []).filter(s => !newScreenIds.includes(s.id)).map(s => s.id);
+            
+            if (screensToRemove.length > 0) {
+                await supabase.from('screens').delete().in('id', screensToRemove);
             }
         }
     } else {
@@ -150,11 +174,13 @@ export default function OutletsManager() {
         }]).select().single();
 
         if (cinemaErr) alert(cinemaErr.message);
-        else if (targetCount > 0) {
-            const screens = Array.from({ length: targetCount }, (_, i) => ({
-                cinema_id: cinema.id, name: `Screen ${i + 1}`, tag: i === 0 ? 'IMAX' : 'Gold'
+        else if (formData.screens.length > 0) {
+            const screensToInsert = formData.screens.map(s => ({
+                cinema_id: cinema.id,
+                name: s.name,
+                tag: s.tag
             }));
-            await supabase.from('screens').insert(screens);
+            await supabase.from('screens').insert(screensToInsert);
         }
     }
     resetForm();
@@ -329,8 +355,19 @@ export default function OutletsManager() {
                             <input className="input-premium" placeholder="e.g. 4DX" value={formData.feature} onChange={e => setFormData({...formData, feature: e.target.value})} />
                         </div>
                         <div className="input-group">
-                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Screens (0 Allowed)</label>
-                            <input type="number" className="input-premium" value={formData.screenCount} onChange={e => setFormData({...formData, screenCount: e.target.value})} min="0" />
+                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Screens ({formData.screens.length})</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {formData.screens.map((screen, index) => (
+                                    <div key={index} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                        <input className="input-premium" style={{ flex: 1, padding: '10px 12px' }} placeholder="Name (e.g. Hall 1)" value={screen.name} onChange={e => handleScreenChange(index, 'name', e.target.value)} required />
+                                        <input className="input-premium" style={{ flex: 1, padding: '10px 12px' }} placeholder="Tag (e.g. IMAX)" value={screen.tag} onChange={e => handleScreenChange(index, 'tag', e.target.value)} />
+                                        <button type="button" onClick={() => handleRemoveScreen(index)} style={{ background: 'rgba(211,47,47,0.2)', color: '#ff6b6b', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={16} /></button>
+                                    </div>
+                                ))}
+                                <button type="button" onClick={handleAddScreen} style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', marginTop: '4px' }}>
+                                    <Plus size={14} /> ADD SCREEN
+                                </button>
+                            </div>
                         </div>
                     </div>
 

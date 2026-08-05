@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Monitor, Save, Loader2, CheckSquare, Square, Info, ShieldAlert, Users } from 'lucide-react';
+import { Monitor, Save, Loader2, CheckSquare, Square, Info, ShieldAlert, Users, Plus, Trash2 } from 'lucide-react';
 
 interface ScreenConfig {
   id?: string;
@@ -52,7 +52,7 @@ export default function KDSConfig({ user }: { user: any }) {
         .from('profiles')
         .select('id, full_name, role')
         .eq('cinema_id', user.cinema_id)
-        .in('role', ['OUTLET_MANAGER', 'OUTLET_STAFF']);
+        .in('role', ['OUTLET_MANAGER', 'OUTLET_STAFF', 'OUTLET_CHEF']);
         
       if (staffData) {
         setStaffList(staffData);
@@ -66,14 +66,13 @@ export default function KDSConfig({ user }: { user: any }) {
 
       if (error) throw error;
 
-      // Populate 5 screens if they don't exist
-      const populatedConfigs: ScreenConfig[] = [];
-      for (let i = 1; i <= 5; i++) {
-        const existing = data?.find(c => c.screen_number === i);
-        populatedConfigs.push(existing || {
+      // Populate screens from database, default to 1 if none exist
+      let populatedConfigs = data || [];
+      if (populatedConfigs.length === 0) {
+        populatedConfigs.push({
           cinema_id: user.cinema_id,
-          screen_number: i,
-          screen_name: `KDS Station ${i}`,
+          screen_number: 1,
+          screen_name: `KDS Station 1`,
           assigned_categories: [],
           assigned_staffs: []
         });
@@ -156,15 +155,39 @@ export default function KDSConfig({ user }: { user: any }) {
     }
   };
 
-  // Helper to find which screen owns a category
-  const getCategoryOwner = (categoryKey: string, currentScreenNum: number) => {
-    const owner = configs.find(c => 
-      c.screen_number !== currentScreenNum && 
-      c.assigned_categories.includes(categoryKey)
-    );
-    return owner ? owner.screen_name || `Screen ${owner.screen_number}` : null;
+  const handleAddScreen = () => {
+    setConfigs(prev => {
+      const maxScreenNum = prev.length > 0 ? Math.max(...prev.map(c => c.screen_number)) : 0;
+      const nextNum = maxScreenNum + 1;
+      return [...prev, {
+        cinema_id: user.cinema_id,
+        screen_number: nextNum,
+        screen_name: `KDS Station ${nextNum}`,
+        assigned_categories: [],
+        assigned_staffs: []
+      }];
+    });
   };
 
+  const handleRemoveScreen = async (screenNum: number, configId?: string) => {
+    if (!window.confirm(`Are you sure you want to remove KDS Station ${screenNum}?`)) return;
+    
+    if (configId) {
+      try {
+        const { error } = await supabase
+          .from('kds_screen_configs')
+          .delete()
+          .eq('id', configId);
+        if (error) throw error;
+      } catch (err) {
+        console.error('Failed to delete screen:', err);
+        alert('Failed to remove screen from database.');
+        return;
+      }
+    }
+    
+    setConfigs(prev => prev.filter(c => c.screen_number !== screenNum));
+  };
   if (loading) {
     return (
       <div style={{ height: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -236,24 +259,41 @@ export default function KDSConfig({ user }: { user: any }) {
                   </div>
                 </div>
 
-                <button 
-                  onClick={() => handleSave(num)}
-                  disabled={saving !== null}
-                  className="btn-lucrative"
-                  style={{ 
-                    padding: '8px 16px', 
-                    fontSize: '12px', 
-                    borderRadius: '10px', 
-                    display: 'flex', alignItems: 'center', gap: '6px' 
-                  }}
-                >
-                  {saving === num ? (
-                    <Loader2 className="animate-spin" size={14} />
-                  ) : (
-                    <Save size={14} />
-                  )}
-                  <span>SAVE</span>
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    onClick={() => handleSave(num)}
+                    disabled={saving !== null}
+                    className="btn-lucrative"
+                    style={{ 
+                      padding: '8px 16px', 
+                      fontSize: '12px', 
+                      borderRadius: '10px', 
+                      display: 'flex', alignItems: 'center', gap: '6px' 
+                    }}
+                  >
+                    {saving === num ? (
+                      <Loader2 className="animate-spin" size={14} />
+                    ) : (
+                      <Save size={14} />
+                    )}
+                    <span>SAVE</span>
+                  </button>
+                  <button 
+                    onClick={() => handleRemoveScreen(num, screen.id)}
+                    style={{ 
+                      padding: '8px 12px', 
+                      background: 'rgba(255,60,60,0.1)', 
+                      border: '1px solid rgba(255,60,60,0.2)', 
+                      color: '#ff6b6b', 
+                      borderRadius: '10px', 
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}
+                    title="Remove Screen"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
 
               {/* Status Indicator */}
@@ -276,21 +316,19 @@ export default function KDSConfig({ user }: { user: any }) {
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px', fontWeight: 'bold' }}>Ready Food Categories</div>
                 {ALL_CATEGORIES.filter(c => c.isReady).map(cat => {
                   const isChecked = screen.assigned_categories.includes(cat.key);
-                  const owner = getCategoryOwner(cat.key, num);
-                  const isDisabled = !!owner;
 
                   return (
                     <div 
                       key={cat.key} 
-                      onClick={() => !isDisabled && toggleCategory(num, cat.key)}
+                      onClick={() => toggleCategory(num, cat.key)}
                       style={{ 
                         display: 'flex', alignItems: 'center', justifyBetween: 'space-between',
                         padding: '10px 12px', 
                         borderRadius: '10px', 
                         background: isChecked ? 'rgba(255,179,106,0.04)' : 'rgba(255,255,255,0.01)',
                         border: isChecked ? '1px solid rgba(255,179,106,0.2)' : '1px solid rgba(255,255,255,0.03)',
-                        cursor: isDisabled ? 'not-allowed' : 'pointer',
-                        opacity: isDisabled ? 0.35 : 1,
+                        cursor: 'pointer',
+                        opacity: 1,
                         transition: 'all 0.2s ease'
                       }}
                     >
@@ -302,12 +340,6 @@ export default function KDSConfig({ user }: { user: any }) {
                         )}
                         <span style={{ fontSize: '13px', color: isChecked ? 'white' : 'rgba(255,255,255,0.7)' }}>{cat.label}</span>
                       </div>
-                      {isDisabled && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', background: 'rgba(244,67,54,0.1)', color: '#F44336', padding: '2px 6px', borderRadius: '4px' }}>
-                          <ShieldAlert size={10} />
-                          <span>On {owner}</span>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -315,21 +347,19 @@ export default function KDSConfig({ user }: { user: any }) {
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '12px', marginBottom: '4px', fontWeight: 'bold' }}>Kitchen Food Categories</div>
                 {ALL_CATEGORIES.filter(c => !c.isReady).map(cat => {
                   const isChecked = screen.assigned_categories.includes(cat.key);
-                  const owner = getCategoryOwner(cat.key, num);
-                  const isDisabled = !!owner;
 
                   return (
                     <div 
                       key={cat.key} 
-                      onClick={() => !isDisabled && toggleCategory(num, cat.key)}
+                      onClick={() => toggleCategory(num, cat.key)}
                       style={{ 
                         display: 'flex', alignItems: 'center', justifyBetween: 'space-between',
                         padding: '10px 12px', 
                         borderRadius: '10px', 
                         background: isChecked ? 'rgba(0,210,255,0.04)' : 'rgba(255,255,255,0.01)',
                         border: isChecked ? '1px solid rgba(0,210,255,0.2)' : '1px solid rgba(255,255,255,0.03)',
-                        cursor: isDisabled ? 'not-allowed' : 'pointer',
-                        opacity: isDisabled ? 0.35 : 1,
+                        cursor: 'pointer',
+                        opacity: 1,
                         transition: 'all 0.2s ease'
                       }}
                     >
@@ -341,12 +371,6 @@ export default function KDSConfig({ user }: { user: any }) {
                         )}
                         <span style={{ fontSize: '13px', color: isChecked ? 'white' : 'rgba(255,255,255,0.7)' }}>{cat.label}</span>
                       </div>
-                      {isDisabled && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', background: 'rgba(244,67,54,0.1)', color: '#F44336', padding: '2px 6px', borderRadius: '4px' }}>
-                          <ShieldAlert size={10} />
-                          <span>On {owner}</span>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -392,6 +416,27 @@ export default function KDSConfig({ user }: { user: any }) {
             </div>
           );
         })}
+        
+        <div 
+          onClick={handleAddScreen}
+          className="glass-card hover-lift"
+          style={{
+            padding: '24px',
+            border: '1px dashed rgba(255,255,255,0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            cursor: 'pointer',
+            minHeight: '200px'
+          }}
+        >
+          <div style={{ padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '50%', color: 'var(--text-muted)' }}>
+            <Plus size={32} />
+          </div>
+          <div style={{ color: 'var(--text-secondary)', fontWeight: 'bold' }}>Add KDS Screen</div>
+        </div>
       </div>
     </div>
   );

@@ -313,7 +313,9 @@ export default function OutletPOS({ user }: { user: any }) {
                 cgst,
                 sgst,
                 platform_charges: platform_charges,
-                outlet_number: outletNumber
+                outlet_number: outletNumber,
+                staff_id: user?.id,
+                staff_email: user?.email
             }
         };
 

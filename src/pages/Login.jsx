@@ -76,9 +76,7 @@ export default function Login({ onLogin }) {
           
           <div style={{ position: 'relative', padding: '0 10% 10%', maxWidth: 560 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
-              <div style={{ width: 64, height: 64, background: 'linear-gradient(135deg,var(--primary-glow),#ff6b6b)', borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 40px rgba(255,47,146,0.5)' }}>
-                <Film size={32} color="white" />
-              </div>
+              <img src="/app_icon.png" alt="Love Cafe" style={{ width: 64, height: 64, borderRadius: 18, boxShadow: '0 0 40px rgba(0,0,0,0.5)', objectFit: 'cover' }} />
               <div>
                 <h1 style={{ fontSize: 36, fontWeight: 900, letterSpacing: -2, margin: 0 }}>Love Cafe</h1>
                 <div style={{ fontSize: 12, color: 'var(--primary-glow)', letterSpacing: 3, fontWeight: 700, textTransform: 'uppercase' }}>Admin Portal</div>
@@ -102,9 +100,7 @@ export default function Login({ onLogin }) {
 
             <div style={{ marginBottom: 40 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                <div style={{ width: 48, height: 48, background: 'rgba(255,47,146,0.1)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Film size={24} color="var(--primary-glow)" />
-                </div>
+                <img src="/app_icon.png" alt="Love Cafe" style={{ width: 48, height: 48, borderRadius: 14, objectFit: 'cover' }} />
                 <div>
                   <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: -0.5 }}>{matchedCinema.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{matchedCinema.location}</div>
@@ -170,9 +166,7 @@ export default function Login({ onLogin }) {
         
         <div style={{ position: 'relative', padding: '0 10% 10%', maxWidth: 560 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
-            <div style={{ width: 64, height: 64, background: 'linear-gradient(135deg,var(--primary-glow),#ff6b6b)', borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 40px rgba(255,47,146,0.5)' }}>
-              <Film size={32} color="white" />
-            </div>
+            <img src="/app_icon.png" alt="Love Cafe" style={{ width: 64, height: 64, borderRadius: 18, boxShadow: '0 0 40px rgba(0,0,0,0.5)', objectFit: 'cover' }} />
             <div>
               <h1 style={{ fontSize: 36, fontWeight: 900, letterSpacing: -2, margin: 0 }}>Love Cafe</h1>
               <div style={{ fontSize: 12, color: 'var(--primary-glow)', letterSpacing: 3, fontWeight: 700, textTransform: 'uppercase' }}>Admin Portal</div>

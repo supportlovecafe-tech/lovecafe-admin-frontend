@@ -35,14 +35,7 @@ export default function Layout({ user, onLogout, currentTab, children }) {
       }}>
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 40, padding: '0 8px' }}>
-          <div style={{ 
-            width: 48, height: 48, 
-            background: 'linear-gradient(135deg, var(--primary-glow), #ff6b6b)', 
-            borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 8px 16px rgba(255,47,146,0.3)', flexShrink: 0
-          }}>
-            <Film size={24} color="white" />
-          </div>
+          <img src="/app_icon.png" alt="Love Cafe" style={{ width: 48, height: 48, borderRadius: 14, boxShadow: '0 8px 16px rgba(0,0,0,0.3)', flexShrink: 0, objectFit: 'cover' }} />
           <div>
             <h2 style={{ fontSize: 20, margin: 0, fontWeight: 900, letterSpacing: -1 }}>Love Cafe</h2>
             <div style={{ fontSize: 10, color: 'var(--primary-glow)', textTransform: 'uppercase', letterSpacing: 2, fontWeight: 800, marginTop: 2 }}>
@@ -55,17 +48,30 @@ export default function Layout({ user, onLogout, currentTab, children }) {
         <nav className="sidebar-scroll" style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2, overflowY: 'auto', paddingRight: '4px', marginBottom: '12px' }}>
           {user.role === 'SUPER_ADMIN' ? (
             <>
-              <SectionLabel>Management</SectionLabel>
+              <SectionLabel>Global Management</SectionLabel>
               <NavItem icon={<Film size={20} />}   label="Outlets"       tabId="outlets"    currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               <NavItem icon={<Activity size={20} />} label="System Health" tabId="health"      currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               <NavItem icon={<KeyRound size={20} />}   label="Credentials"   tabId="staff"      currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               <NavItem icon={<Settings size={20} />}   label="Platform Fees" tabId="dashboard"  currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              
+              <SectionLabel style={{ marginTop: 16 }}>Live Operations</SectionLabel>
+              <NavItem icon={<Monitor size={20} />} label="Live Orders (KDS)" tabId="live-orders" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<Store size={20} />} label="Outlet POS" tabId="outlet-pos" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<History size={20} />} label="Order History" tabId="history" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              
+              <SectionLabel style={{ marginTop: 16 }}>Outlet Management</SectionLabel>
+              <NavItem icon={<PieChart size={20} />} label="Sales Analytics" tabId="sales" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<Coffee size={20} />}  label="Menu Editor"  tabId="menu"       currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<Package size={20} />} label="Combo Deals"  tabId="combos"     currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<Percent size={20} />} label="Promos & Offers" tabId="offers"  currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<Archive size={20} />} label="Inventory Stock" tabId="inventory" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<Monitor size={20} />} label="KDS Routing" tabId="kds-config" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
             </>
           ) : (
             <>
               <SectionLabel>Live Operations</SectionLabel>
-              {(!user.permissions || user.permissions.includes('dashboard')) && (
-                <NavItem icon={<Home size={20} />} label="Live POS" tabId="dashboard" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              {(!user.permissions || user.permissions.includes('orders')) && (
+                <NavItem icon={<Monitor size={20} />} label="Live Orders (KDS)" tabId="live-orders" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               )}
               {(!user.permissions || user.permissions.includes('outlet-pos')) && (
                 <NavItem icon={<Store size={20} />} label="Outlet POS" tabId="outlet-pos" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />

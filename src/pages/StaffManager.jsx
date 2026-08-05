@@ -27,7 +27,7 @@ export default function StaffManager() {
     try {
       const [cinemasRes, profilesRes] = await Promise.all([
         supabase.from('cinemas').select('id, name, location, login_email'),
-        supabase.from('profiles').select('*').in('role', ['OUTLET_MANAGER', 'OUTLET_STAFF']).order('updated_at', { ascending: false })
+        supabase.from('profiles').select('*').in('role', ['OUTLET_MANAGER', 'OUTLET_STAFF', 'OUTLET_CHEF']).order('updated_at', { ascending: false })
       ]);
 
       if (cinemasRes.data) setCinemas(cinemasRes.data);
@@ -134,6 +134,7 @@ export default function StaffManager() {
             const staff = staffByOutlet[cinema.id] || [];
             const managerCount = staff.filter(s => s.role === 'OUTLET_MANAGER').length;
             const staffCount = staff.filter(s => s.role === 'OUTLET_STAFF').length;
+            const chefCount = staff.filter(s => s.role === 'OUTLET_CHEF').length;
 
             return (
               <div key={cinema.id} className="glass-card" style={{ border: isExpanded ? '1px solid rgba(255,47,146,0.2)' : '1px solid rgba(255,255,255,0.05)' }}>
@@ -142,7 +143,7 @@ export default function StaffManager() {
                   style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '20px 24px', width: '100%', background: 'none', border: 'none', color: 'white', cursor: 'pointer', textAlign: 'left' }}
                 >
                   {isExpanded ? <ChevronDown size={20} color="var(--primary-glow)" /> : <ChevronRight size={20} color="var(--text-muted)" />}
-                  <Film size={20} color="var(--primary-glow)" />
+                  <img src="/app_icon.png" alt="Icon" style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: '800', fontSize: '15px' }}>{cinema.name}</div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{cinema.location}</div>
@@ -154,6 +155,11 @@ export default function StaffManager() {
                     <span style={{ fontSize: '10px', padding: '3px 8px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', fontWeight: '800' }}>
                       {staffCount} STAFF
                     </span>
+                    {chefCount > 0 && (
+                      <span style={{ fontSize: '10px', padding: '3px 8px', borderRadius: '6px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', fontWeight: '800' }}>
+                        {chefCount} CHEF
+                      </span>
+                    )}
                   </div>
                 </button>
 
@@ -192,10 +198,10 @@ export default function StaffManager() {
                               <td style={{ padding: '14px 24px' }}>
                                 <span style={{
                                   padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '900',
-                                  background: s.role === 'OUTLET_MANAGER' ? 'rgba(255,47,146,0.12)' : 'rgba(255,179,106,0.1)',
-                                  color: s.role === 'OUTLET_MANAGER' ? 'var(--primary-glow)' : 'var(--secondary-orange)'
+                                  background: s.role === 'OUTLET_MANAGER' ? 'rgba(255,47,146,0.12)' : (s.role === 'OUTLET_CHEF' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255,179,106,0.1)'),
+                                  color: s.role === 'OUTLET_MANAGER' ? 'var(--primary-glow)' : (s.role === 'OUTLET_CHEF' ? '#38bdf8' : 'var(--secondary-orange)')
                                 }}>
-                                  {s.role === 'OUTLET_MANAGER' ? 'MANAGER' : 'STAFF'}
+                                  {s.role === 'OUTLET_MANAGER' ? 'MANAGER' : (s.role === 'OUTLET_CHEF' ? 'CHEF' : 'STAFF')}
                                 </span>
                               </td>
                               <td style={{ padding: '14px 24px', fontFamily: 'monospace', fontSize: '16px', fontWeight: 'bold', color: 'var(--success)', letterSpacing: '3px' }}>{s.pin || '—'}</td>
@@ -272,6 +278,7 @@ export default function StaffManager() {
                 <select className="input-premium" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
                   <option value="OUTLET_MANAGER" style={{ background: 'var(--bg-dark)' }}>Manager</option>
                   <option value="OUTLET_STAFF" style={{ background: 'var(--bg-dark)' }}>Staff</option>
+                  <option value="OUTLET_CHEF" style={{ background: 'var(--bg-dark)' }}>Chef</option>
                 </select>
               </div>
 

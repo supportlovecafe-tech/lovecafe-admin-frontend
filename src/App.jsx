@@ -81,14 +81,24 @@ function TabRenderer({ role, user, currentTab }) {
       case 'outlets':    return <OutletsManager user={user} />
       case 'staff':      return <StaffManager user={user} />
       case 'health':     return <SystemHealth />
+      case 'live-orders': return <OutletManagerDashboard user={user} />
+      case 'outlet-pos': return <OutletPOS user={user} />
+      case 'sales':      return <SalesDashboard user={user} />
+      case 'history':    return <OrderHistory user={user} />
+      case 'menu':       return <MenuManager user={user} />
+      case 'combos':     return <ComboManager user={user} />
+      case 'offers':     return <OffersManager user={user} />
+      case 'inventory':  return <InventoryManager user={user} />
+      case 'kds-config': return <KDSConfig user={user} />
       default:           return <OutletsManager user={user} />
     }
   }
 
-  if (role === 'OUTLET_MANAGER' || role === 'OUTLET_STAFF') {
+  if (role === 'OUTLET_MANAGER' || role === 'OUTLET_STAFF' || role === 'OUTLET_CHEF') {
     const p = user.permissions || ['orders', 'menu'];
     
     if (currentTab === 'dashboard' && p.includes('orders')) return <OutletManagerDashboard user={user} />;
+    if (currentTab === 'live-orders' && p.includes('orders')) return <OutletManagerDashboard user={user} />;
     if (currentTab === 'outlet-pos' && p.includes('orders')) return <OutletPOS user={user} />;
     if (currentTab === 'sales' && p.includes('sales')) return <SalesDashboard user={user} />;
     if (currentTab === 'history' && p.includes('history')) return <OrderHistory user={user} />;
