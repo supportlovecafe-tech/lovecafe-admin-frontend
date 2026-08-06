@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Film, Mail, Lock, LogIn, Eye, EyeOff, Wifi, Hash, ArrowLeft } from 'lucide-react';
-import { GoogleLogin } from '@react-oauth/google';
 
 export default function Login({ onLogin }) {
   const [loading, setLoading] = useState(false);
@@ -12,6 +11,73 @@ export default function Login({ onLogin }) {
   const [pinStep, setPinStep] = useState(false);
   const [matchedCinema, setMatchedCinema] = useState(null);
   const [pin, setPin] = useState('');
+
+  // Email Auth State
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleEmailLogin = async (e) => {
+    e?.preventDefault();
+    if (authInProgress.current) return;
+    if (!email || !password) {
+      setError('Please enter both email and password.');
+      return;
+    }
+    
+    authInProgress.current = true;
+    setLoading(true);
+    setError('');
+    
+    try {
+      // Ensure any old session is signed out cleanly
+      await supabase.auth.signOut().catch(() => {});
+      
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password,
+      });
+      
+      if (error) throw error;
+      
+      if (data?.user) {
+        // 1. Check if Super Admin
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', data.user.email)
+          .single();
+          
+        if (profile) {
+          onLogin({ ...profile, email: data.user.email });
+          return;
+        }
+        
+        // 2. Check if Outlet Manager
+        const { data: cinema } = await supabase
+          .from('cinemas')
+          .select('*')
+          .eq('login_email', data.user.email.toLowerCase())
+          .single();
+          
+        if (cinema) {
+          setMatchedCinema(cinema);
+          setPinStep(true);
+          setLoading(false);
+          authInProgress.current = false;
+          return;
+        }
+        
+        throw new Error('This account is not authorized as an admin or outlet manager.');
+      }
+    } catch (err) {
+      setError(err.message === 'Invalid login credentials' ? 'Incorrect email or password.' : err.message || 'Authentication failed.');
+      await supabase.auth.signOut().catch(() => {});
+    } finally {
+      setLoading(false);
+      authInProgress.current = false;
+    }
+  };
 
   const handlePinSubmit = async (e) => {
     e?.preventDefault();
@@ -204,79 +270,61 @@ export default function Login({ onLogin }) {
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24 }}>
-              <GoogleLogin
-                onSuccess={async (credentialResponse) => {
-                  if (authInProgress.current) return;
-                  authInProgress.current = true;
-                  setLoading(true);
-                  setError('');
-                  try {
-                    // Ensure any old session is signed out cleanly without breaking Supabase locks
-                    await supabase.auth.signOut().catch(() => {});
-                    
-                    const { data, error } = await supabase.auth.signInWithIdToken({
-                      provider: 'google',
-                      token: credentialResponse.credential,
-                    });
-                    if (error) throw error;
-                    
-                    if (data?.user) {
-                      // 1. Check if Super Admin
-                      const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('*')
-                        .eq('email', data.user.email)
-                        .single();
-                        
-                      if (profile) {
-                        onLogin({ ...profile, email: data.user.email });
-                        return;
-                      }
-                      
-                      // 2. Check if Outlet Manager
-                      const { data: cinema, error: cinemaErr } = await supabase
-                        .from('cinemas')
-                        .select('*')
-                        .eq('login_email', data.user.email.toLowerCase())
-                        .single();
-                        
-                      if (cinema) {
-                        setMatchedCinema(cinema);
-                        setPinStep(true);
-                        setLoading(false);
-                        authInProgress.current = false;
-                        return;
-                      }
-                      
-                      // 3. Unauthorized
-                      setError('Access Denied: Your email is not authorized.');
-                      await supabase.auth.signOut();
-                    }
-                  } catch (err) {
-                    setError(err.message || 'Google Login failed.');
-                  } finally {
-                    setLoading(false);
-                    authInProgress.current = false;
-                  }
+            <form onSubmit={handleEmailLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Email Address</label>
+                <div style={{ position: 'relative' }}>
+                  <Mail size={18} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    style={{ width: '100%', padding: '14px 16px 14px 44px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, color: 'white', fontSize: 15, outline: 'none', transition: 'all 0.2s', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Password</label>
+                <div style={{ position: 'relative' }}>
+                  <Lock size={18} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Enter your password"
+                    style={{ width: '100%', padding: '14px 44px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, color: 'white', fontSize: 15, outline: 'none', transition: 'all 0.2s', boxSizing: 'border-box' }}
+                    required
+                  />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}>
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              <button 
+                type="submit"
+                disabled={loading}
+                className="hover-lift"
+                style={{
+                  width: '100%', padding: '14px', marginTop: 8, background: 'var(--primary-glow)',
+                  border: 'none', borderRadius: 12, color: 'white', fontSize: 15, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, transition: 'all 0.2s', boxSizing: 'border-box'
                 }}
-                onError={() => {
-                  setError('Google Login Failed');
-                }}
-                prompt="select_account"
-                shape="rectangular"
-                theme="filled_black"
-                text="continue_with"
-                size="large"
-                width="300"
-              />
-            </div>
-            
-            {loading && (
-               <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14, marginTop: 16 }}>
-                 Authenticating...
-               </div>
-            )}
+              >
+                {loading ? (
+                  <span>Authenticating...</span>
+                ) : (
+                  <>
+                    <span>Sign In</span>
+                    <LogIn size={18} />
+                  </>
+                )}
+              </button>
+            </form>
           </div>
 
 

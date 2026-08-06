@@ -10,7 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@react-oauth/google": "^0.13.5",
     "@supabase/supabase-js": "^2.104.0",
     "lucide-react": "^1.8.0",
     "react": "^19.2.5",
