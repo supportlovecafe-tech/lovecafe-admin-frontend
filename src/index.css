@@ -448,7 +448,7 @@ select option {
 
 
 .sidebar-toggle-btn {
-  display: none;
+  display: flex;
   position: fixed;
   top: 20px;
   right: 20px;

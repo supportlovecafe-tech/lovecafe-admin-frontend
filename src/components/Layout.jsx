@@ -3,7 +3,7 @@ import { navigate } from '../lib/router';
 import { LogOut, Home, Users, PieChart, Film, Coffee, Settings, Bell, KeyRound, History, Menu, X, Store, Package, Activity, Percent, Monitor, Archive } from 'lucide-react';
 
 export default function Layout({ user, onLogout, currentTab, children }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
   
   if (!user) return children;
 
