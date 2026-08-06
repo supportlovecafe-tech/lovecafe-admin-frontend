@@ -81,15 +81,6 @@ function TabRenderer({ role, user, currentTab }) {
       case 'outlets':    return <OutletsManager user={user} />
       case 'staff':      return <StaffManager user={user} />
       case 'health':     return <SystemHealth />
-      case 'live-orders': return <OutletManagerDashboard user={user} />
-      case 'outlet-pos': return <OutletPOS user={user} />
-      case 'sales':      return <SalesDashboard user={user} />
-      case 'history':    return <OrderHistory user={user} />
-      case 'menu':       return <MenuManager user={user} />
-      case 'combos':     return <ComboManager user={user} />
-      case 'offers':     return <OffersManager user={user} />
-      case 'inventory':  return <InventoryManager user={user} />
-      case 'kds-config': return <KDSConfig user={user} />
       default:           return <OutletsManager user={user} />
     }
   }

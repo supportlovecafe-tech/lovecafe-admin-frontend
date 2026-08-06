@@ -53,19 +53,6 @@ export default function Layout({ user, onLogout, currentTab, children }) {
               <NavItem icon={<Activity size={20} />} label="System Health" tabId="health"      currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               <NavItem icon={<KeyRound size={20} />}   label="Credentials"   tabId="staff"      currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               <NavItem icon={<Settings size={20} />}   label="Platform Fees" tabId="dashboard"  currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              
-              <SectionLabel style={{ marginTop: 16 }}>Live Operations</SectionLabel>
-              <NavItem icon={<Monitor size={20} />} label="Live Orders (KDS)" tabId="live-orders" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<Store size={20} />} label="Outlet POS" tabId="outlet-pos" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<History size={20} />} label="Order History" tabId="history" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              
-              <SectionLabel style={{ marginTop: 16 }}>Outlet Management</SectionLabel>
-              <NavItem icon={<PieChart size={20} />} label="Sales Analytics" tabId="sales" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<Coffee size={20} />}  label="Menu Editor"  tabId="menu"       currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<Package size={20} />} label="Combo Deals"  tabId="combos"     currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<Percent size={20} />} label="Promos & Offers" tabId="offers"  currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<Archive size={20} />} label="Inventory Stock" tabId="inventory" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<Monitor size={20} />} label="KDS Routing" tabId="kds-config" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
             </>
           ) : (
             <>
