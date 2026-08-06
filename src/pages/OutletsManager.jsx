@@ -18,6 +18,7 @@ export default function OutletsManager() {
     imageUrl: '',
     screens: [],
     loginEmail: '',
+    loginPassword: '',
     outletNumber: ''
   });
   const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
@@ -39,7 +40,7 @@ export default function OutletsManager() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', location: '', feature: '', imageUrl: '', screens: [], loginEmail: '', outletNumber: '' });
+    setFormData({ name: '', location: '', feature: '', imageUrl: '', screens: [], loginEmail: '', loginPassword: '', outletNumber: '' });
     setIsEditing(false);
     setCurrentId(null);
   };
@@ -52,6 +53,7 @@ export default function OutletsManager() {
         imageUrl: cinema.image_url || '',
         screens: cinema.screens || [],
         loginEmail: cinema.login_email || '',
+        loginPassword: '',
         outletNumber: cinema.outlet_number || ''
     });
     setIsEditing(true);
@@ -128,6 +130,23 @@ export default function OutletsManager() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    
+    if (formData.loginEmail && formData.loginPassword) {
+        try {
+            const backendUrl = import.meta.env.VITE_BACKEND_API_URL || 'https://api.lovecafe.org.in';
+            const setupRes = await fetch(`${backendUrl}/api/admin/setup-outlet-user`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: formData.loginEmail, password: formData.loginPassword })
+            });
+            const setupData = await setupRes.json();
+            if (!setupRes.ok) throw new Error(setupData.error || 'Failed to setup user');
+        } catch (err) {
+            alert(`Authentication Setup Error: ${err.message}`);
+            setLoading(false);
+            return;
+        }
+    }
     
     if (isEditing) {
         const { error } = await supabase.from('cinemas').update({ 
@@ -349,33 +368,36 @@ export default function OutletsManager() {
                         </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                        <div className="input-group">
-                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Feature</label>
-                            <input className="input-premium" placeholder="e.g. 4DX" value={formData.feature} onChange={e => setFormData({...formData, feature: e.target.value})} />
-                        </div>
-                        <div className="input-group">
-                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Screens ({formData.screens.length})</label>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {formData.screens.map((screen, index) => (
-                                    <div key={index} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                        <input className="input-premium" style={{ flex: 1, padding: '10px 12px' }} placeholder="Name (e.g. Hall 1)" value={screen.name} onChange={e => handleScreenChange(index, 'name', e.target.value)} required />
-                                        <input className="input-premium" style={{ flex: 1, padding: '10px 12px' }} placeholder="Tag (e.g. IMAX)" value={screen.tag} onChange={e => handleScreenChange(index, 'tag', e.target.value)} />
-                                        <button type="button" onClick={() => handleRemoveScreen(index)} style={{ background: 'rgba(211,47,47,0.2)', color: '#ff6b6b', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={16} /></button>
-                                    </div>
-                                ))}
-                                <button type="button" onClick={handleAddScreen} style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', marginTop: '4px' }}>
-                                    <Plus size={14} /> ADD SCREEN
-                                </button>
-                            </div>
+                    <div className="input-group">
+                        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Feature</label>
+                        <input className="input-premium" placeholder="e.g. 4DX" value={formData.feature} onChange={e => setFormData({...formData, feature: e.target.value})} />
+                    </div>
+                    
+                    <div className="input-group">
+                        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Screens ({formData.screens.length})</label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {formData.screens.map((screen, index) => (
+                                <div key={index} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                    <input className="input-premium" style={{ flex: 1, padding: '10px 12px' }} placeholder="Name (e.g. Hall 1)" value={screen.name} onChange={e => handleScreenChange(index, 'name', e.target.value)} required />
+                                    <input className="input-premium" style={{ flex: 1, padding: '10px 12px' }} placeholder="Tag (e.g. IMAX)" value={screen.tag} onChange={e => handleScreenChange(index, 'tag', e.target.value)} />
+                                    <button type="button" onClick={() => handleRemoveScreen(index)} style={{ background: 'rgba(211,47,47,0.2)', color: '#ff6b6b', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={16} /></button>
+                                </div>
+                            ))}
+                            <button type="button" onClick={handleAddScreen} style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', marginTop: '4px' }}>
+                                <Plus size={14} /> ADD SCREEN
+                            </button>
                         </div>
                     </div>
 
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '20px', marginTop: '4px' }}>
                         <div style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '16px', letterSpacing: '1.5px' }}>Outlet Login Credentials</div>
                         <div className="input-group" style={{ marginBottom: '16px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Authorized Google Email</label>
-                            <input className="input-premium" placeholder="outlet@lovecafe.com" value={formData.loginEmail} onChange={e => setFormData({...formData, loginEmail: e.target.value})} />
+                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Authorized Login Email</label>
+                            <input type="email" className="input-premium" placeholder="outlet@lovecafe.com" value={formData.loginEmail} onChange={e => setFormData({...formData, loginEmail: e.target.value})} />
+                        </div>
+                        <div className="input-group" style={{ marginBottom: '16px' }}>
+                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Login Password {isEditing && <span style={{ textTransform: 'none', fontWeight: 'normal', color: 'var(--text-secondary)' }}>(leave blank to keep current)</span>}</label>
+                            <input type="text" className="input-premium" placeholder="Set a secure password..." value={formData.loginPassword} onChange={e => setFormData({...formData, loginPassword: e.target.value})} />
                         </div>
                     </div>
 
