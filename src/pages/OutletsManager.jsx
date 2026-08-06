@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { API_BASE_URL } from '../lib/config';
 import { Plus, MapPin, Film, Star, Edit2, Trash2, Image as ImageIcon, Save, X, Search, Upload, Loader2 } from 'lucide-react';
 
 export default function OutletsManager() {
@@ -133,8 +134,7 @@ export default function OutletsManager() {
     
     if (formData.loginEmail && formData.loginPassword) {
         try {
-            const backendUrl = import.meta.env.VITE_BACKEND_API_URL || 'https://api.lovecafe.org.in';
-            const setupRes = await fetch(`${backendUrl}/api/admin/setup-outlet-user`, {
+            const setupRes = await fetch(`${API_BASE_URL}/api/admin/setup-outlet-user`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: formData.loginEmail, password: formData.loginPassword })
