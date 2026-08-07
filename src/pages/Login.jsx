@@ -48,7 +48,7 @@ export default function Login({ onLogin }) {
           .eq('email', data.user.email)
           .single();
           
-        if (profile) {
+        if (profile && profile.role === 'SUPER_ADMIN') {
           onLogin({ ...profile, email: data.user.email });
           return;
         }
