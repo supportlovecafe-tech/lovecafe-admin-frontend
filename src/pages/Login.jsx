@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import {  useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Film, Mail, Lock, LogIn, Eye, EyeOff, Wifi, Hash, ArrowLeft } from 'lucide-react';
 

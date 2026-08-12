@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import {  useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { ShoppingBag, Search, Calendar, Filter, ChevronLeft, ChevronRight, Clock, Download, X, ListFilter } from 'lucide-react';
 

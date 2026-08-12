@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import {  useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import { useTabRouting } from './lib/router'
 import Login from './pages/Login'
