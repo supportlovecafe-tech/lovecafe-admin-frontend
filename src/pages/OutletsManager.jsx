@@ -76,9 +76,11 @@ export default function OutletsManager() {
   };
 
   const handleScreenChange = (index, field, value) => {
-    const newScreens = [...formData.screens];
-    newScreens[index][field] = value;
-    setFormData(prev => ({ ...prev, screens: newScreens }));
+    setFormData(prev => {
+        const newScreens = [...prev.screens];
+        newScreens[index] = { ...newScreens[index], [field]: value };
+        return { ...prev, screens: newScreens };
+    });
   };
 
   const handleFileUpload = async (e) => {
@@ -163,20 +165,30 @@ export default function OutletsManager() {
                 name: s.name,
                 tag: s.tag
             }));
-            
-            if (screensToInsert.length > 0) {
-                await supabase.from('screens').insert(screensToInsert);
-            }
-            
-            for (const screen of formData.screens.filter(s => s.id)) {
-                await supabase.from('screens').update({ name: screen.name, tag: screen.tag }).eq('id', screen.id);
-            }
-            
+            const screensToUpdate = formData.screens.filter(s => s.id).map(s => ({
+                id: s.id,
+                name: s.name,
+                tag: s.tag
+            }));
             const newScreenIds = formData.screens.filter(s => s.id).map(s => s.id);
             const screensToRemove = (existingScreens || []).filter(s => !newScreenIds.includes(s.id)).map(s => s.id);
-            
-            if (screensToRemove.length > 0) {
-                await supabase.from('screens').delete().in('id', screensToRemove);
+
+            try {
+                const syncRes = await fetch(`${API_BASE_URL}/api/admin/sync-screens`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        cinemaId: currentId, 
+                        screensToInsert, 
+                        screensToUpdate, 
+                        screensToRemove 
+                    })
+                });
+                const syncData = await syncRes.json();
+                if (!syncRes.ok) throw new Error(syncData.error || 'Failed to sync screens');
+            } catch (err) {
+                console.error("Error syncing screens:", err);
+                alert("Error updating screens: " + err.message);
             }
         }
     } else {
@@ -199,7 +211,22 @@ export default function OutletsManager() {
                 name: s.name,
                 tag: s.tag
             }));
-            await supabase.from('screens').insert(screensToInsert);
+            
+            try {
+                const syncRes = await fetch(`${API_BASE_URL}/api/admin/sync-screens`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        cinemaId: cinema.id, 
+                        screensToInsert 
+                    })
+                });
+                const syncData = await syncRes.json();
+                if (!syncRes.ok) throw new Error(syncData.error || 'Failed to add screens');
+            } catch (err) {
+                console.error("Error adding screens:", err);
+                alert("Error adding screens: " + err.message);
+            }
         }
     }
     resetForm();
