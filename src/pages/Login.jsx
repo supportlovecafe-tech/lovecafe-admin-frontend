@@ -258,6 +258,14 @@ export default function Login({ onLogin }) {
       {/* Right: Login form */}
       <div className="login-right">
         <div style={{ width: '100%', maxWidth: 420 }}>
+          <div className="mobile-brand" style={{ alignItems: 'center', gap: 16, marginBottom: 40 }}>
+            <img src="/app_icon.png" alt="Love Cafe" style={{ width: 56, height: 56, borderRadius: 16, boxShadow: '0 0 30px rgba(0,0,0,0.5)', objectFit: 'cover' }} />
+            <div>
+              <h1 style={{ fontSize: 28, fontWeight: 900, letterSpacing: -1.5, margin: 0 }}>Love Cafe</h1>
+              <div style={{ fontSize: 11, color: 'var(--primary-glow)', letterSpacing: 2.5, fontWeight: 700, textTransform: 'uppercase' }}>Admin Portal</div>
+            </div>
+          </div>
+
           <div style={{ marginBottom: 48 }}>
             <h2 style={{ fontSize: 32, fontWeight: 900, marginBottom: 10, letterSpacing: -1 }}>Staff Entry</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: 15 }}>Welcome back! Access your cafe dashboard.</p>

@@ -251,7 +251,14 @@ select option {
   width: 100%;
 }
 
+.mobile-brand {
+  display: flex;
+}
+
 @media (min-width: 768px) {
+  .mobile-brand {
+    display: none !important;
+  }
   .login-container {
     flex-direction: row;
   }
