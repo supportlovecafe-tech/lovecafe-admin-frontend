@@ -129,10 +129,10 @@ export default function Login({ onLogin }) {
   // ======== PIN ENTRY SCREEN ========
   if (pinStep && matchedCinema) {
     return (
-      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg-dark)' }}>
+      <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[var(--bg-dark)]">
         
         {/* Left: Brand panel */}
-        <div style={{ flex: 1.2, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'flex-end' }}>
+        <div className="hidden md:flex flex-[1.2] relative overflow-hidden items-end">
           <img
             src="https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&q=80&w=2070"
             alt="Cinema"
@@ -158,7 +158,7 @@ export default function Login({ onLogin }) {
         </div>
 
         {/* Right: PIN Entry */}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 8%', background: 'var(--bg-dark)' }}>
+        <div className="flex-1 flex items-center justify-center p-6 md:p-[60px_8%] bg-[var(--bg-dark)] w-full">
           <div style={{ width: '100%', maxWidth: 420 }}>
             <button onClick={handleBackToLogin} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: 32, fontSize: 13, fontWeight: 600 }}>
               <ArrowLeft size={16} /> Back to Login
@@ -219,10 +219,10 @@ export default function Login({ onLogin }) {
 
   // ======== MAIN LOGIN SCREEN ========
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg-dark)' }}>
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[var(--bg-dark)]">
       
       {/* Left: Cinematic brand panel */}
-      <div style={{ flex: 1.2, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'flex-end' }}>
+      <div className="hidden md:flex flex-[1.2] relative overflow-hidden items-end">
         <img
           src="https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&q=80&w=2070"
           alt="Cinema"
@@ -256,7 +256,7 @@ export default function Login({ onLogin }) {
       </div>
 
       {/* Right: Login form */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 8%', background: 'var(--bg-dark)' }}>
+      <div className="flex-1 flex items-center justify-center p-6 md:p-[60px_8%] bg-[var(--bg-dark)] w-full">
         <div style={{ width: '100%', maxWidth: 420 }}>
           <div style={{ marginBottom: 48 }}>
             <h2 style={{ fontSize: 32, fontWeight: 900, marginBottom: 10, letterSpacing: -1 }}>Staff Entry</h2>

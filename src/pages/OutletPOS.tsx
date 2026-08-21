@@ -297,6 +297,7 @@ export default function OutletPOS({ user }: { user: any }) {
         const orderData = {
             cinema_id: cinemaId,
             display_id: displayId,
+            staff_id: user?.id,
             items: itemsJson,
             total_amount: total, 
             location: locationString,

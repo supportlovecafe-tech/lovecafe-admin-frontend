@@ -344,6 +344,26 @@ export default function SalesDashboard({ user }: { user: any }) {
 
       </div>
 
+      {/* Employee Sales Performance */}
+      <div style={{ marginTop: '24px' }}>
+        <ChartContainer title="Staff Performance (Revenue & Orders)" loading={loading} height={400}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data?.employee_sales} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+              <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={12} />
+              <YAxis yAxisId="left" stroke="var(--text-muted)" fontSize={12} tickFormatter={(val) => `₹${val}`} />
+              <YAxis yAxisId="right" orientation="right" stroke="var(--text-muted)" fontSize={12} />
+              <Tooltip 
+                contentStyle={{ background: 'var(--bg-dark)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }} 
+              />
+              <Legend wrapperStyle={{ paddingTop: '20px' }} />
+              <Bar yAxisId="left" dataKey="revenue" name="Revenue (₹)" fill="var(--primary-glow)" radius={[4, 4, 0, 0]} maxBarSize={60} />
+              <Bar yAxisId="right" dataKey="orders" name="Orders Taken" fill="var(--accent-gold)" radius={[4, 4, 0, 0]} maxBarSize={60} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartContainer>
+      </div>
+
     </div>
   );
 }
