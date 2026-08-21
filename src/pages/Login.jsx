@@ -129,10 +129,10 @@ export default function Login({ onLogin }) {
   // ======== PIN ENTRY SCREEN ========
   if (pinStep && matchedCinema) {
     return (
-      <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[var(--bg-dark)]">
+      <div className="login-container">
         
         {/* Left: Brand panel */}
-        <div className="hidden md:flex flex-[1.2] relative overflow-hidden items-end">
+        <div className="login-left">
           <img
             src="https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&q=80&w=2070"
             alt="Cinema"
@@ -158,7 +158,7 @@ export default function Login({ onLogin }) {
         </div>
 
         {/* Right: PIN Entry */}
-        <div className="flex-1 flex items-center justify-center p-6 md:p-[60px_8%] bg-[var(--bg-dark)] w-full">
+        <div className="login-right">
           <div style={{ width: '100%', maxWidth: 420 }}>
             <button onClick={handleBackToLogin} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: 32, fontSize: 13, fontWeight: 600 }}>
               <ArrowLeft size={16} /> Back to Login
@@ -219,10 +219,10 @@ export default function Login({ onLogin }) {
 
   // ======== MAIN LOGIN SCREEN ========
   return (
-    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[var(--bg-dark)]">
+    <div className="login-container">
       
       {/* Left: Cinematic brand panel */}
-      <div className="hidden md:flex flex-[1.2] relative overflow-hidden items-end">
+      <div className="login-left">
         <img
           src="https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&q=80&w=2070"
           alt="Cinema"
@@ -256,7 +256,7 @@ export default function Login({ onLogin }) {
       </div>
 
       {/* Right: Login form */}
-      <div className="flex-1 flex items-center justify-center p-6 md:p-[60px_8%] bg-[var(--bg-dark)] w-full">
+      <div className="login-right">
         <div style={{ width: '100%', maxWidth: 420 }}>
           <div style={{ marginBottom: 48 }}>
             <h2 style={{ fontSize: 32, fontWeight: 900, marginBottom: 10, letterSpacing: -1 }}>Staff Entry</h2>
