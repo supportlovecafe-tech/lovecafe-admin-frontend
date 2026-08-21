@@ -57,7 +57,7 @@ export default function OrderHistory({ user }) {
   };
 
   const downloadFullTransactionReport = async () => {
-    let query = supabase.from('orders').select('timestamp, display_id, location, total_amount, payment_method, status, items, metadata');
+    let query = supabase.from('orders').select('timestamp, display_id, location, total_amount, payment_method, status, items, metadata, collected_cash, return_cash');
     
     if (user.cinema_id && user.cinema_id !== 'default') {
         query = query.eq('cinema_id', user.cinema_id);
@@ -71,7 +71,7 @@ export default function OrderHistory({ user }) {
     if (error) { alert('Error generating report'); return; }
     if (!data || data.length === 0) { alert('No records found for the selected range'); return; }
 
-    const headers = ['Date', 'Time', 'Order ID', 'Location', 'Amount', 'Payment', 'Status', 'Items', 'Staff Email'];
+    const headers = ['Date', 'Time', 'Order ID', 'Location', 'Amount', 'Payment', 'Status', 'Items', 'Staff Email', 'Collected Cash', 'Return Cash'];
     const rows = data.map(o => {
         const d = new Date(o.timestamp);
         const items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
@@ -86,7 +86,9 @@ export default function OrderHistory({ user }) {
             o.payment_method,
             o.status,
             itemsList,
-            o.metadata?.staff_email || 'N/A'
+            o.metadata?.staff_email || 'N/A',
+            o.collected_cash || 0,
+            o.return_cash || 0
         ];
     });
 
@@ -244,6 +246,12 @@ export default function OrderHistory({ user }) {
                     <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--accent-gold)' }}>
                       {order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
                     </span>
+                    {order.payment_method === 'POS_CASH' && order.collected_cash > 0 && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div>Collected: ₹{order.collected_cash}</div>
+                        <div>Return: ₹{order.return_cash}</div>
+                      </div>
+                    )}
                   </td>
                   <td style={{ fontWeight: 'bold' }}>₹{order.total_amount}</td>
                   <td>

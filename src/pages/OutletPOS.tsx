@@ -17,6 +17,7 @@ export default function OutletPOS({ user }: { user: any }) {
   const [screenNumber, setScreenNumber] = useState('');
   const [seatNumber, setSeatNumber] = useState('');
   const [paymentMode, setPaymentMode] = useState('Cash');
+  const [collectedCash, setCollectedCash] = useState('');
 
   // Persistence keys
   const STORAGE_KEYS = {
@@ -298,6 +299,8 @@ export default function OutletPOS({ user }: { user: any }) {
             cinema_id: cinemaId,
             display_id: displayId,
             staff_id: user?.id,
+            collected_cash: paymentMode === 'Cash' ? (Number(collectedCash) || 0) : 0,
+            return_cash: paymentMode === 'Cash' ? Math.max(0, (Number(collectedCash) || 0) - total) : 0,
             items: itemsJson,
             total_amount: total, 
             location: locationString,
@@ -688,6 +691,27 @@ export default function OutletPOS({ user }: { user: any }) {
                             ))}
                         </div>
                     </div>
+
+                    {paymentMode === 'Cash' && (
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block', textTransform: 'uppercase', fontWeight: 'bold' }}>Collected Cash (₹)</label>
+                                <input 
+                                    type="number" 
+                                    placeholder="e.g. 500" 
+                                    value={collectedCash}
+                                    onChange={e => setCollectedCash(e.target.value)}
+                                    style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '14px' }}
+                                />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block', textTransform: 'uppercase', fontWeight: 'bold' }}>Return Cash (₹)</label>
+                                <div style={{ width: '100%', padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', color: 'var(--accent-gold)', fontSize: '16px', fontWeight: '900', display: 'flex', alignItems: 'center', height: '42px', boxSizing: 'border-box' }}>
+                                    {collectedCash && Number(collectedCash) >= total ? (Number(collectedCash) - total).toFixed(2) : '0.00'}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -853,6 +877,18 @@ export default function OutletPOS({ user }: { user: any }) {
                                 <span>TOTAL</span>
                                 <span>₹{lastOrder.total_amount.toFixed(2)}</span>
                             </div>
+                            {lastOrder.payment_method === 'POS_CASH' && lastOrder.collected_cash > 0 && (
+                                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #ccc' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
+                                        <span>Cash Collected</span>
+                                        <span>₹{lastOrder.collected_cash.toFixed(2)}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 'bold' }}>
+                                        <span>Change Returned</span>
+                                        <span>₹{lastOrder.return_cash.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            )}
                             <div style={{ textAlign: 'center', marginTop: '30px', fontSize: '12px' }}>
                                 Thank you for choosing Love Cafe!
                             </div>
