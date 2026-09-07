@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
-import { ShoppingCart, Plus, Minus, Trash2, Printer, CheckCircle, Store, Loader2, RefreshCcw, Smartphone, CreditCard, Banknote } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, Printer, CheckCircle, Store, Loader2, RefreshCcw, Smartphone, CreditCard, Banknote, X } from 'lucide-react';
 
 export default function OutletPOS({ user }: { user: any }) {
   const [foods, setFoods] = useState<any[]>([]);
