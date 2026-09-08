@@ -86,22 +86,22 @@ function TabRenderer({ role, user, currentTab }) {
   }
 
   if (role === 'OUTLET_MANAGER' || role === 'OUTLET_STAFF' || role === 'OUTLET_CHEF') {
-    const p = user.permissions || ['orders', 'menu'];
+    const p = user.permissions || ['orders', 'menu', 'outlet-pos', 'history', 'sales', 'combos', 'offers', 'inventory', 'kds-config'];
     
-    if (currentTab === 'dashboard' && p.includes('orders')) return <OutletManagerDashboard user={user} />;
-    if (currentTab === 'live-orders' && p.includes('orders')) return <OutletManagerDashboard user={user} />;
-    if (currentTab === 'outlet-pos' && p.includes('orders')) return <OutletPOS user={user} />;
+    if (currentTab === 'dashboard' && (p.includes('orders') || p.includes('outlet-pos'))) return <OutletManagerDashboard user={user} />;
+    if (currentTab === 'live-orders' && (p.includes('orders') || p.includes('outlet-pos'))) return <OutletManagerDashboard user={user} />;
+    if (currentTab === 'outlet-pos' && (p.includes('orders') || p.includes('outlet-pos'))) return <OutletPOS user={user} />;
     if (currentTab === 'sales' && p.includes('sales')) return <SalesDashboard user={user} />;
-    if (currentTab === 'history' && p.includes('history')) return <OrderHistory user={user} />;
+    if (currentTab === 'history' && (p.includes('history') || p.includes('orders'))) return <OrderHistory user={user} />;
     if (currentTab === 'menu' && p.includes('menu')) return <MenuManager user={user} />;
-    if (currentTab === 'combos' && p.includes('menu')) return <ComboManager user={user} />;
-    if (currentTab === 'offers' && p.includes('menu')) return <OffersManager user={user} />;
-    if (currentTab === 'inventory' && p.includes('menu')) return <InventoryManager user={user} />;
-    if (currentTab === 'kds-config' && p.includes('menu')) return <KDSConfig user={user} />;
+    if (currentTab === 'combos' && (p.includes('combos') || p.includes('menu'))) return <ComboManager user={user} />;
+    if (currentTab === 'offers' && (p.includes('offers') || p.includes('menu'))) return <OffersManager user={user} />;
+    if (currentTab === 'inventory' && (p.includes('inventory') || p.includes('menu'))) return <InventoryManager user={user} />;
+    if (currentTab === 'kds-config' && (p.includes('kds-config') || p.includes('menu'))) return <KDSConfig user={user} />;
     if (currentTab === 'health') return <SystemHealth />;
 
     // Fallbacks
-    if (p.includes('orders')) return <OutletManagerDashboard user={user} />;
+    if (p.includes('orders') || p.includes('outlet-pos')) return <OutletManagerDashboard user={user} />;
     if (p.includes('sales')) return <SalesDashboard user={user} />;
     if (p.includes('history')) return <OrderHistory user={user} />;
     if (p.includes('menu')) return <MenuManager user={user} />;
