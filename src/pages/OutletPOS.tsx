@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
-import { ShoppingCart, Plus, Minus, Trash2, Printer, CheckCircle, Store, Loader2, RefreshCcw, Smartphone, CreditCard, Banknote, X, Search, ArrowRight } from 'lucide-react';
+import { 
+  ShoppingCart, Plus, Minus, Trash2, Printer, CheckCircle, Store, 
+  Loader2, RefreshCcw, Smartphone, CreditCard, Banknote, X, Search, 
+  ArrowRight, Tv, Armchair, Phone 
+} from 'lucide-react';
 
 export default function OutletPOS({ user }: { user: any }) {
   const [foods, setFoods] = useState<any[]>([]);
@@ -105,7 +109,7 @@ export default function OutletPOS({ user }: { user: any }) {
   const fetchMenu = async () => {
     setLoading(true);
     const cinemaId = user?.cinema_id || user?.cinemaId;
-    let foodQuery = supabase.from('food_items').select('id, name, description, price, image_url, category, cinema_id, is_available').eq('is_available', true);
+    let foodQuery = supabase.from('food_items').select('id, name, description, price, image_url, category, cinema_id, is_available, is_veg').eq('is_available', true);
     let comboQuery = supabase.from('combos').select('id, name, description, price, image_url, category, cinema_id, is_available, combo_items(*)').eq('is_available', true);
     let addonGroupQuery = supabase.from('addon_groups').select('*, addon_options(*)').order('sort_order', { ascending: true });
     let addonAssignQuery = supabase.from('addon_group_assignments').select('*');
@@ -334,6 +338,7 @@ export default function OutletPOS({ user }: { user: any }) {
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     if (!customerPhone || !screenNumber || !seatNumber) {
+        setIsMobileCartOpen(true);
         alert("Please provide customer phone, screen number, and seat number.");
         return;
     }
@@ -617,6 +622,51 @@ export default function OutletPOS({ user }: { user: any }) {
                 </div>
             </header>
 
+            {/* Quick Customer Info Bar on POS Screen */}
+            <div className="pos-customer-quickbar">
+                <div className="pos-quickbar-field" style={{ flex: 1.4 }}>
+                    <Phone size={14} color="var(--primary-glow)" style={{ flexShrink: 0 }} />
+                    <input 
+                        type="tel"
+                        inputMode="numeric"
+                        placeholder="Mobile (10 digits)..."
+                        value={customerPhone}
+                        onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))}
+                        className="pos-quickbar-input"
+                        maxLength={10}
+                    />
+                    {customerPhone && (
+                        <button 
+                            type="button"
+                            onClick={() => setCustomerPhone('')} 
+                            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', padding: 0, cursor: 'pointer', display: 'flex' }}
+                        >
+                            <X size={13} />
+                        </button>
+                    )}
+                </div>
+                <div className="pos-quickbar-field" style={{ flex: 1 }}>
+                    <Tv size={14} color="var(--primary-glow)" style={{ flexShrink: 0 }} />
+                    <input 
+                        type="text"
+                        placeholder="Screen..."
+                        value={screenNumber}
+                        onChange={e => setScreenNumber(e.target.value)}
+                        className="pos-quickbar-input"
+                    />
+                </div>
+                <div className="pos-quickbar-field" style={{ flex: 0.9 }}>
+                    <Armchair size={14} color="var(--primary-glow)" style={{ flexShrink: 0 }} />
+                    <input 
+                        type="text"
+                        placeholder="Seat..."
+                        value={seatNumber}
+                        onChange={e => setSeatNumber(e.target.value)}
+                        className="pos-quickbar-input"
+                    />
+                </div>
+            </div>
+
             {/* Content Area: Categories + Grid */}
             <div className="pos-content-area" style={{ minWidth: 0 }}>
                 {/* Categories Bar */}
@@ -645,40 +695,74 @@ export default function OutletPOS({ user }: { user: any }) {
                                 onClick={() => handleItemClick(food)}
                                 className={`pos-food-card ${inCartQty > 0 ? 'in-cart' : ''}`}
                             >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '6px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {/* Food Image Thumbnail or Fallback */}
+                                <div className="pos-food-img-wrap">
+                                    {food.image_url ? (
+                                        <img 
+                                            src={food.image_url} 
+                                            alt={food.name}
+                                            className="pos-food-img"
+                                            loading="lazy"
+                                            onError={(e) => {
+                                                (e.target as HTMLElement).style.display = 'none';
+                                                const fallback = (e.target as HTMLElement).nextElementSibling;
+                                                if (fallback) (fallback as HTMLElement).style.display = 'flex';
+                                            }}
+                                        />
+                                    ) : null}
+                                    <div 
+                                        className="pos-food-img-fallback" 
+                                        style={{ display: food.image_url ? 'none' : 'flex' }}
+                                    >
+                                        🍽️
+                                    </div>
+
+                                    {/* Veg/Non-Veg Badge Overlay */}
+                                    <div className="pos-food-badge-veg" title={food.is_veg !== false ? 'Vegetarian' : 'Non-Vegetarian'}>
                                         <div style={{
-                                            width: 14, height: 14, border: `1.5px solid ${food.is_veg !== false ? '#4ade80' : '#f87171'}`,
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '3px', flexShrink: 0
+                                            width: 14, height: 14,
+                                            border: `2px solid ${food.is_veg !== false ? '#22c55e' : '#ef4444'}`,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            borderRadius: '3px', background: 'rgba(0,0,0,0.65)'
                                         }}>
-                                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: food.is_veg !== false ? '#4ade80' : '#f87171' }} />
+                                            <div style={{
+                                                width: 6, height: 6, borderRadius: '50%',
+                                                background: food.is_veg !== false ? '#22c55e' : '#ef4444'
+                                            }} />
                                         </div>
+                                    </div>
+
+                                    {/* Badges: In-Cart or Customizable */}
+                                    <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, alignItems: 'center', zIndex: 2 }}>
                                         {inCartQty > 0 && (
-                                            <span style={{ fontSize: '11px', background: 'var(--primary-glow)', color: 'white', padding: '1px 6px', borderRadius: '6px', fontWeight: 800 }}>
+                                            <span className="pos-badge-incart">
                                                 {inCartQty} in cart
                                             </span>
                                         )}
+                                        {hasAddons && (
+                                            <span className="pos-badge-customizable">
+                                                CUSTOMIZE
+                                            </span>
+                                        )}
                                     </div>
-                                    {hasAddons && (
-                                        <span style={{
-                                            fontSize: '10px',
-                                            background: 'rgba(255,47,146,0.18)',
-                                            color: 'var(--primary-glow)',
-                                            border: '1px solid rgba(255,47,146,0.35)',
-                                            padding: '2px 7px',
-                                            borderRadius: '6px',
-                                            fontWeight: 800,
-                                            letterSpacing: '0.3px'
-                                        }}>
-                                            CUSTOMIZE
-                                        </span>
-                                    )}
                                 </div>
-                                <div className="pos-food-name">{food.name}</div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginTop: 'auto' }}>
-                                    <div className="pos-food-price">₹{food.price}</div>
-                                    <div className="pos-food-add-btn">
-                                        <Plus size={16} strokeWidth={3} />
+
+                                {/* Food Details */}
+                                <div className="pos-food-info">
+                                    <div className="pos-food-name" title={food.name}>{food.name}</div>
+                                    <div className="pos-food-bottom-row">
+                                        <div className="pos-food-price">₹{food.price}</div>
+                                        <button 
+                                            type="button" 
+                                            className="pos-food-add-btn" 
+                                            aria-label={`Add ${food.name}`}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleItemClick(food);
+                                            }}
+                                        >
+                                            <Plus size={15} strokeWidth={3} />
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -771,89 +855,174 @@ export default function OutletPOS({ user }: { user: any }) {
 
                 {/* Checkout & Customer Details Section */}
                 <div className="pos-cart-checkout-section">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px' }}>
                         <div>
-                            <label className="pos-label">Phone Number</label>
-                            <input 
-                                id="pos-customer-phone"
-                                name="customer-phone"
-                                autoComplete="off"
-                                type="tel"
-                                inputMode="numeric"
-                                placeholder="e.g. 9876543210" 
-                                value={customerPhone}
-                                onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))}
-                                className="pos-input"
-                            />
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                            <div style={{ flex: 1 }}>
-                                <label className="pos-label">Screen</label>
-                                <input 
-                                    id="pos-screen-number"
-                                    name="screen-number"
-                                    autoComplete="off"
-                                    type="text" 
-                                    placeholder="e.g. Screen 1" 
-                                    value={screenNumber}
-                                    onChange={e => setScreenNumber(e.target.value)}
-                                    className="pos-input"
-                                />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                <label className="pos-label" style={{ margin: 0 }}>Customer Mobile</label>
+                                <span style={{ fontSize: '11px', color: customerPhone.length === 10 ? '#4ade80' : 'var(--text-muted)' }}>
+                                    {customerPhone.length === 10 ? '✓ 10 digits' : `${customerPhone.length}/10 digits`}
+                                </span>
                             </div>
-                            <div style={{ flex: 1 }}>
-                                <label className="pos-label">Seat</label>
+                            <div style={{ position: 'relative' }}>
+                                <Phone size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
                                 <input 
-                                    id="pos-seat-number"
-                                    name="seat-number"
+                                    id="pos-customer-phone"
+                                    name="customer-phone"
                                     autoComplete="off"
-                                    type="text" 
-                                    placeholder="e.g. F9" 
-                                    value={seatNumber}
-                                    onChange={e => setSeatNumber(e.target.value)}
+                                    type="tel"
+                                    inputMode="numeric"
+                                    placeholder="Enter 10-digit mobile number" 
+                                    value={customerPhone}
+                                    onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))}
+                                    maxLength={10}
                                     className="pos-input"
+                                    style={{ paddingLeft: '36px' }}
                                 />
+                                {customerPhone && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setCustomerPhone('')} 
+                                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: 4 }}
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
                             </div>
                         </div>
+
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <div style={{ flex: 1 }}>
+                                <label className="pos-label">Screen Number</label>
+                                <div style={{ position: 'relative' }}>
+                                    <Tv size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
+                                    <input 
+                                        id="pos-screen-number"
+                                        name="screen-number"
+                                        autoComplete="off"
+                                        type="text" 
+                                        placeholder="e.g. Screen 1" 
+                                        value={screenNumber}
+                                        onChange={e => setScreenNumber(e.target.value)}
+                                        className="pos-input"
+                                        style={{ paddingLeft: '36px' }}
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <label className="pos-label">Seat Number</label>
+                                <div style={{ position: 'relative' }}>
+                                    <Armchair size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
+                                    <input 
+                                        id="pos-seat-number"
+                                        name="seat-number"
+                                        autoComplete="off"
+                                        type="text" 
+                                        placeholder="e.g. F9" 
+                                        value={seatNumber}
+                                        onChange={e => setSeatNumber(e.target.value)}
+                                        className="pos-input"
+                                        style={{ paddingLeft: '36px' }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
                         <div>
                             <label className="pos-label">Payment Mode</label>
                             <div style={{ display: 'flex', gap: '8px' }}>
-                                {['Cash', 'Online', 'Card'].map(mode => (
+                                {[
+                                    { id: 'Cash', label: 'Cash', icon: Banknote },
+                                    { id: 'Online', label: 'Online / UPI', icon: Smartphone },
+                                    { id: 'Card', label: 'Card', icon: CreditCard }
+                                ].map(({ id, label, icon: Icon }) => (
                                     <button
-                                        key={mode}
+                                        key={id}
                                         type="button"
-                                        onClick={() => setPaymentMode(mode)}
+                                        onClick={() => setPaymentMode(id)}
                                         style={{
-                                            flex: 1, padding: '10px 8px', borderRadius: '10px', fontSize: '13px', fontWeight: 'bold',
-                                            background: paymentMode === mode ? 'var(--primary-glow)' : 'rgba(255,255,255,0.06)',
-                                            color: paymentMode === mode ? 'white' : 'var(--text-muted)',
-                                            border: paymentMode === mode ? '1px solid rgba(255,47,146,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                                            flex: 1, padding: '11px 8px', borderRadius: '12px', fontSize: '13px', fontWeight: 800,
+                                            background: paymentMode === id ? 'linear-gradient(135deg, var(--primary-glow) 0%, #ff5252 100%)' : 'rgba(255,255,255,0.06)',
+                                            color: paymentMode === id ? 'white' : 'var(--text-muted)',
+                                            border: paymentMode === id ? '1px solid rgba(255,47,146,0.5)' : '1px solid rgba(255,255,255,0.1)',
                                             cursor: 'pointer',
-                                            transition: 'all 0.2s'
+                                            transition: 'all 0.15s ease',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '6px'
                                         }}
                                     >
-                                        {mode}
+                                        <Icon size={15} />
+                                        <span>{label}</span>
                                     </button>
                                 ))}
                             </div>
                         </div>
 
                         {paymentMode === 'Cash' && (
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '4px', background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                                <div style={{ flex: 1 }}>
-                                    <label className="pos-label">Collected Cash (₹)</label>
-                                    <input 
-                                        type="number" 
-                                        inputMode="decimal"
-                                        placeholder="e.g. 500" 
-                                        value={collectedCash}
-                                        onChange={e => setCollectedCash(e.target.value)}
-                                        className="pos-input"
-                                    />
+                            <div style={{ background: 'rgba(255,255,255,0.04)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                {/* Quick Cash Suggestions */}
+                                <div style={{ marginBottom: '6px', fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                    Quick Cash Options
                                 </div>
-                                <div style={{ flex: 1 }}>
-                                    <label className="pos-label">Return Cash (₹)</label>
-                                    <div style={{ width: '100%', padding: '10px 14px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px', color: 'var(--accent-gold)', fontSize: '18px', fontWeight: '900', display: 'flex', alignItems: 'center', height: '44px', boxSizing: 'border-box' }}>
-                                        ₹{collectedCash && Number(collectedCash) >= total ? (Number(collectedCash) - total).toFixed(2) : '0.00'}
+                                <div className="pos-quick-cash-row">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setCollectedCash(Math.ceil(total).toString())} 
+                                        className="pos-quick-cash-btn"
+                                        style={{ borderColor: 'var(--primary-glow)', color: 'var(--primary-glow)' }}
+                                    >
+                                        Exact ₹{Math.ceil(total)}
+                                    </button>
+                                    {[100, 200, 500, 1000, 2000].map(amt => (
+                                        <button 
+                                            key={amt} 
+                                            type="button" 
+                                            onClick={() => setCollectedCash(amt.toString())} 
+                                            className="pos-quick-cash-btn"
+                                        >
+                                            ₹{amt}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <label className="pos-label">Amount Collected (₹)</label>
+                                        <input 
+                                            type="number" 
+                                            inputMode="decimal"
+                                            placeholder="e.g. 500" 
+                                            value={collectedCash}
+                                            onChange={e => setCollectedCash(e.target.value)}
+                                            className="pos-input"
+                                        />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <label className="pos-label">Returned Amount</label>
+                                        <div style={{ 
+                                            width: '100%', padding: '8px 12px', 
+                                            background: collectedCash && Number(collectedCash) >= total ? 'rgba(34, 197, 94, 0.12)' : 'rgba(0,0,0,0.4)', 
+                                            border: collectedCash && Number(collectedCash) >= total ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(255,255,255,0.15)', 
+                                            borderRadius: '10px', 
+                                            color: collectedCash && Number(collectedCash) >= total ? '#4ade80' : (collectedCash && Number(collectedCash) < total ? '#f59e0b' : 'var(--accent-gold)'), 
+                                            fontSize: '16px', fontWeight: '900', display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                                            height: '46px', boxSizing: 'border-box' 
+                                        }}>
+                                            <span>
+                                                ₹{collectedCash && Number(collectedCash) >= total ? (Number(collectedCash) - total).toFixed(2) : '0.00'}
+                                            </span>
+                                            {collectedCash && Number(collectedCash) >= total && (
+                                                <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 800 }}>
+                                                    CHANGE
+                                                </span>
+                                            )}
+                                            {collectedCash && Number(collectedCash) < total && (
+                                                <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 700 }}>
+                                                    SHORT
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
