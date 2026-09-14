@@ -1,6 +1,6 @@
 import {  useState, useEffect } from 'react';
 import { navigate } from '../lib/router';
-import { LogOut, Home, Users, PieChart, Film, Coffee, Settings, Bell, KeyRound, History, Menu, X, Store, Package, Activity, Percent, Monitor, Archive } from 'lucide-react';
+import { LogOut, Home, Users, PieChart, Film, Coffee, Settings, Bell, KeyRound, History, Menu, X, Store, Package, Activity, Percent, Monitor, Archive, Sliders } from 'lucide-react';
 
 export default function Layout({ user, onLogout, currentTab, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -108,6 +108,9 @@ export default function Layout({ user, onLogout, currentTab, children }) {
               )}
               {(!user.permissions || user.permissions.includes('kds-config')) && (
                 <NavItem icon={<Monitor size={20} />} label="KDS Routing" tabId="kds-config" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              )}
+              {(!user.permissions || user.permissions.includes('menu') || user.permissions.includes('addons')) && (
+                <NavItem icon={<Sliders size={20} />} label="Add-ons" tabId="addons" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               )}
             </>
           )}
