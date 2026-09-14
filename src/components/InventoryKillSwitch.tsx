@@ -25,8 +25,8 @@ export const InventoryKillSwitch = ({ cinemaId, onClose }: { cinemaId: string, o
     setLoading(true);
     try {
       const [foodRes, comboRes] = await Promise.all([
-        supabase.from('food_items').select('id, name, category, is_available').eq('cinema_id', cinemaId),
-        supabase.from('combos').select('id, name, category, is_available').eq('cinema_id', cinemaId)
+        supabase.from('food_items').select('id, name, category, is_available').or(`cinema_id.eq.${cinemaId},cinema_id.is.null`),
+        supabase.from('combos').select('id, name, category, is_available').or(`cinema_id.eq.${cinemaId},cinema_id.is.null`)
       ]);
 
       const foodItems: InventoryItem[] = (foodRes.data || []).map(i => ({ ...i, type: 'FOOD' }));

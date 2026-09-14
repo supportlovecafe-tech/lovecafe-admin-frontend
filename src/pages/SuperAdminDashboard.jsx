@@ -36,6 +36,7 @@ export default function SuperAdminDashboard() {
   const [posFee, setPosFee] = useState('0.0');
   const [selectedCategories, setSelectedCategories] = useState(['ALL']);
   const [enableCinepoints, setEnableCinepoints] = useState(true);
+  const [enableGst, setEnableGst] = useState(true);
   const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
@@ -63,6 +64,8 @@ export default function SuperAdminDashboard() {
       if (val.pos_fee_percent !== undefined) setPosFee(val.pos_fee_percent.toString());
       if (val.applicable_categories) setSelectedCategories(val.applicable_categories);
       if (val.enable_cinepoints !== undefined) setEnableCinepoints(val.enable_cinepoints);
+      if (val.enable_gst !== undefined) setEnableGst(val.enable_gst);
+      else if (val.enable_cgst_sgst !== undefined) setEnableGst(val.enable_cgst_sgst);
     }
 
     setLoading(false);
@@ -108,7 +111,8 @@ export default function SuperAdminDashboard() {
             online_fee_percent: parseFloat(onlineFee) || 0.0,
             pos_fee_percent: parseFloat(posFee) || 0.0,
             applicable_categories: selectedCategories,
-            enable_cinepoints: enableCinepoints
+            enable_cinepoints: enableCinepoints,
+            enable_gst: enableGst
           },
           updated_at: new Date().toISOString()
         });
@@ -241,6 +245,48 @@ export default function SuperAdminDashboard() {
                     position: 'absolute', 
                     top: '2px', 
                     left: enableCinepoints ? '22px' : '2px',
+                    transition: 'all 0.3s ease',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                  }} />
+                </div>
+              </div>
+
+              {/* CGST & SGST (Taxes) Toggle */}
+              <div className="input-group" style={{ 
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                padding: '16px', background: 'rgba(255,255,255,0.02)', 
+                borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)',
+                marginTop: '12px'
+              }}>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    CGST & SGST (Taxes)
+                    {enableGst 
+                      ? <span style={{ fontSize: '9px', background: 'rgba(76,175,80,0.15)', color: '#4CAF50', padding: '2px 6px', borderRadius: '4px' }}>ACTIVE (5%)</span>
+                      : <span style={{ fontSize: '9px', background: 'rgba(244,67,54,0.15)', color: '#F44336', padding: '2px 6px', borderRadius: '4px' }}>DISABLED</span>
+                    }
+                  </label>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '4px 0 0' }}>Enable 2.5% CGST and 2.5% SGST on customer bills and app.</p>
+                </div>
+                
+                <div 
+                  onClick={() => setEnableGst(!enableGst)}
+                  style={{
+                    width: '44px', height: '24px', 
+                    borderRadius: '12px', 
+                    background: enableGst ? 'var(--accent-gold)' : 'rgba(255,255,255,0.1)',
+                    position: 'relative', 
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease'
+                  }}
+                >
+                  <div style={{
+                    width: '20px', height: '20px', 
+                    borderRadius: '50%', 
+                    background: 'white', 
+                    position: 'absolute', 
+                    top: '2px', 
+                    left: enableGst ? '22px' : '2px',
                     transition: 'all 0.3s ease',
                     boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                   }} />

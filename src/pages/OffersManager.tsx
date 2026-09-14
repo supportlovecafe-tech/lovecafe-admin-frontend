@@ -94,7 +94,7 @@ export default function OffersManager({ user }: { user: any }) {
         .order('category', { ascending: true });
 
       if (user?.role === 'OUTLET_MANAGER' && user?.cinema_id) {
-        foodQuery = foodQuery.eq('cinema_id', user.cinema_id);
+        foodQuery = foodQuery.or(`cinema_id.eq.${user.cinema_id},cinema_id.is.null`);
       }
 
       const { data: foodData, error: foodError } = await foodQuery;

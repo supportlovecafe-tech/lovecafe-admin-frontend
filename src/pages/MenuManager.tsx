@@ -20,12 +20,110 @@ interface FormData {
   isVeg: boolean;
 }
 
+interface CategoryItem {
+  key: string;
+  label: string;
+  section: 'READY_FOOD' | 'KITCHEN_FOOD';
+}
+
+const DEFAULT_CATEGORIES: CategoryItem[] = [
+  // Ready Foods
+  { key: 'POPCORN', label: '🍿 Popcorn', section: 'READY_FOOD' },
+  { key: 'LASSI', label: '🥛 Lassi', section: 'READY_FOOD' },
+  { key: 'MILKSHAKE', label: '🥤 Milkshake', section: 'READY_FOOD' },
+  { key: 'ICE_CREAM', label: '🍦 Ice Cream', section: 'READY_FOOD' },
+  { key: 'BEVERAGES', label: '🧃 Beverages', section: 'READY_FOOD' },
+  { key: 'LOVE_SPECIAL', label: '❤️ Love Special', section: 'READY_FOOD' },
+  // Kitchen Foods
+  { key: 'SNACKS', label: '🍟 Snacks', section: 'KITCHEN_FOOD' },
+  { key: 'SANDWICH', label: '🥪 Sandwich', section: 'KITCHEN_FOOD' },
+  { key: 'BURGER', label: '🍔 Burger', section: 'KITCHEN_FOOD' },
+  { key: 'TIKKA', label: '🍗 Tikka', section: 'KITCHEN_FOOD' },
+  { key: 'WRAPS', label: '🌯 Wraps', section: 'KITCHEN_FOOD' },
+  { key: 'TACO', label: '🌮 Taco', section: 'KITCHEN_FOOD' },
+  { key: 'MOMO', label: '🥟 Momo', section: 'KITCHEN_FOOD' },
+  { key: 'CHINESE_RICE_COMBO', label: '🍚 Chinese Rice Combo', section: 'KITCHEN_FOOD' },
+  { key: 'CHINESE_NOODLES_COMBO', label: '🍜 Chinese Noodles Combo', section: 'KITCHEN_FOOD' },
+  { key: 'CHINESE_PASTA', label: '🍝 Chinese Pasta', section: 'KITCHEN_FOOD' },
+  { key: 'PIZZA', label: '🍕 Pizza', section: 'KITCHEN_FOOD' },
+  { key: 'FUSION_FOODS', label: '🌟 Fusion Foods', section: 'KITCHEN_FOOD' }
+];
+
 export default function MenuManager({ user }: { user: any }) {
   const [foods, setFoods] = useState<FoodItem[]>([]);
   const [cinemas, setCinemas] = useState<Cinema[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Custom Categories list with local storage backup
+  const [customCategories, setCustomCategories] = useState<CategoryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('cinema_custom_categories');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Modal for adding category
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatSection, setNewCatSection] = useState<'READY_FOOD' | 'KITCHEN_FOOD'>('KITCHEN_FOOD');
+
+  // Combined categories
+  const allCategoryList = React.useMemo(() => {
+    const map = new Map<string, CategoryItem>();
+    DEFAULT_CATEGORIES.forEach(c => map.set(c.key, c));
+    customCategories.forEach(c => map.set(c.key, c));
+
+    // Also pick up any category existing in foods that isn't mapped yet
+    foods.forEach(f => {
+      const catKey = (f.category || '').toUpperCase().trim();
+      if (catKey && !map.has(catKey)) {
+        const isReady = ['POPCORN', 'LASSI', 'MILKSHAKE', 'ICE_CREAM', 'BEVERAGES', 'LOVE_SPECIAL'].includes(catKey) 
+          || f.food_type === 'READY_FOOD';
+        map.set(catKey, {
+          key: catKey,
+          label: f.category,
+          section: isReady ? 'READY_FOOD' : 'KITCHEN_FOOD'
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [customCategories, foods]);
+
+  const handleCreateCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newCatName.trim();
+    if (!trimmed) return;
+
+    const formattedKey = trimmed.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+    if (!formattedKey) {
+      alert('Please enter a valid category name.');
+      return;
+    }
+
+    const newCategory: CategoryItem = {
+      key: formattedKey,
+      label: trimmed,
+      section: newCatSection
+    };
+
+    const updated = [...customCategories.filter(c => c.key !== formattedKey), newCategory];
+    setCustomCategories(updated);
+    try {
+      localStorage.setItem('cinema_custom_categories', JSON.stringify(updated));
+    } catch (err) {
+      console.error('Failed to save category:', err);
+    }
+
+    // Automatically select the newly created category in the food item form
+    setFormData(prev => ({ ...prev, category: formattedKey }));
+    setNewCatName('');
+    setShowAddCategoryModal(false);
+  };
 
   const categories = React.useMemo(() => {
     return Array.from(new Set([
@@ -94,22 +192,29 @@ export default function MenuManager({ user }: { user: any }) {
     return items;
   };
 
-  const downloadCsvTemplate = () => {
+  const downloadSampleTemplate = () => {
+    const headers = "ItemName,Category,Price,Description,Image,IsVeg,ApplyGst\n";
+    const sample = "Salted Caramel Popcorn,SNACKS,250,Delicious popcorn,https://images.unsplash.com/photo-1578849278619-e73505e9610f,TRUE,TRUE\nClassic Nachos,SNACKS,180,Crispy tortilla chips with cheese dip,,TRUE,TRUE\nCold Coffee,BEVERAGES,150,Chilled blended creamy coffee,,TRUE,TRUE\n";
+    const blob = new Blob(['\ufeff' + headers + sample], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'menu_sample_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadCurrentMenu = () => {
     const headers = "ItemName,Category,Price,Description,Image,IsVeg,ApplyGst\n";
     
-    if (menuItems.length === 0) {
-      const sample = "Salted Caramel Popcorn,SNACKS,250,Delicious popcorn,https://example.com/image.png,TRUE,TRUE\n";
-      const blob = new Blob([headers + sample], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'menu_bulk_upload_template.csv';
-      a.click();
-      URL.revokeObjectURL(url);
+    if (!foods || foods.length === 0) {
+      downloadSampleTemplate();
       return;
     }
 
-    const rows = menuItems.map(item => {
+    const rows = foods.map(item => {
       const escapeCsv = (str: string) => {
         if (!str) return '';
         const escaped = str.toString().replace(/"/g, '""');
@@ -127,12 +232,14 @@ export default function MenuManager({ user }: { user: any }) {
       ].join(',');
     }).join('\n');
 
-    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const blob = new Blob(['\ufeff' + headers + rows], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'current_menu_export.csv';
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -211,11 +318,10 @@ export default function MenuManager({ user }: { user: any }) {
     setBulkError(null);
     
     const targetCinemaId = user?.role === 'OUTLET_MANAGER' ? user.cinema_id : bulkTargetCinemaId;
-    const READY_FOOD_KEYS = ['POPCORN', 'LASSI', 'MILKSHAKE', 'ICE_CREAM', 'BEVERAGES', 'LOVE_SPECIAL'];
     
     const payload = bulkFileItems.map(item => {
-      const isReadyFood = READY_FOOD_KEYS.includes(item.category);
-      const derivedFoodType = isReadyFood ? 'READY_FOOD' : 'KITCHEN_FOOD';
+      const matchedCat = allCategoryList.find(c => c.key === item.category);
+      const derivedFoodType = matchedCat ? matchedCat.section : 'KITCHEN_FOOD';
       
       return {
         name: item.name,
@@ -260,7 +366,7 @@ export default function MenuManager({ user }: { user: any }) {
     let cinemaQuery = supabase.from('cinemas').select('id, name, location, rating, feature, image_url, owner_id, created_at');
 
     if (user?.role === 'OUTLET_MANAGER' && user?.cinema_id) {
-        foodQuery = foodQuery.eq('cinema_id', user.cinema_id);
+        foodQuery = foodQuery.or(`cinema_id.eq.${user.cinema_id},cinema_id.is.null`);
         cinemaQuery = cinemaQuery.eq('id', user.cinema_id);
     }
 
@@ -354,11 +460,11 @@ export default function MenuManager({ user }: { user: any }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const targetCinemaId = user?.role === 'OUTLET_MANAGER' ? user.cinema_id : formData.cinemaId;
+    // Force all newly created or updated items to be global to share the same menu across all outlets
+    const targetCinemaId = ''; // user?.role === 'OUTLET_MANAGER' ? user.cinema_id : formData.cinemaId;
     
-    const READY_FOOD_KEYS = ['POPCORN', 'LASSI', 'MILKSHAKE', 'ICE_CREAM', 'BEVERAGES', 'LOVE_SPECIAL'];
-    const isReadyFood = READY_FOOD_KEYS.includes(formData.category);
-    const derivedFoodType = isReadyFood ? 'READY_FOOD' : 'KITCHEN_FOOD';
+    const matchedCat = allCategoryList.find(c => c.key === formData.category);
+    const derivedFoodType = matchedCat ? matchedCat.section : 'KITCHEN_FOOD';
 
     const payload: Database['public']['Tables']['food_items']['Insert'] = {
         name: formData.name,
@@ -517,7 +623,38 @@ export default function MenuManager({ user }: { user: any }) {
                             <input type="number" className="input-premium" placeholder="250" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} required />
                         </div>
                         <div className="input-group">
-                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Category</label>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', margin: 0 }}>Category</label>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddCategoryModal(true)}
+                                    title="Add New Category (Kitchen or Ready Food)"
+                                    style={{
+                                        background: 'rgba(255, 47, 146, 0.15)',
+                                        border: '1px solid rgba(255, 47, 146, 0.3)',
+                                        color: '#ff2f92',
+                                        borderRadius: '6px',
+                                        width: '22px',
+                                        height: '22px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        padding: 0
+                                    }}
+                                    onMouseEnter={e => {
+                                        e.currentTarget.style.background = 'var(--primary-red)';
+                                        e.currentTarget.style.color = '#ffffff';
+                                    }}
+                                    onMouseLeave={e => {
+                                        e.currentTarget.style.background = 'rgba(255, 47, 146, 0.15)';
+                                        e.currentTarget.style.color = '#ff2f92';
+                                    }}
+                                >
+                                    <Plus size={14} />
+                                </button>
+                            </div>
                             <select 
                                 className="input-premium" 
                                 value={formData.category} 
@@ -526,26 +663,14 @@ export default function MenuManager({ user }: { user: any }) {
                                 style={{ appearance: 'none', background: 'var(--surface-container-high)', color: 'white' }}
                             >
                                 <optgroup label="🟢 Ready Food" style={{ background: '#1c1c1e', color: '#ffb36a' }}>
-                                    <option value="POPCORN">🍿 Popcorn</option>
-                                    <option value="LASSI">🥛 Lassi</option>
-                                    <option value="MILKSHAKE">🥤 Milkshake</option>
-                                    <option value="ICE_CREAM">🍦 Ice Cream</option>
-                                    <option value="BEVERAGES">🧃 Beverages</option>
-                                    <option value="LOVE_SPECIAL">❤️ Love Special</option>
+                                    {allCategoryList.filter(c => c.section === 'READY_FOOD').map(cat => (
+                                        <option key={cat.key} value={cat.key}>{cat.label}</option>
+                                    ))}
                                 </optgroup>
                                 <optgroup label="🔥 Kitchen Food" style={{ background: '#1c1c1e', color: '#00d2ff' }}>
-                                    <option value="SNACKS">🍟 Snacks</option>
-                                    <option value="SANDWICH">🥪 Sandwich</option>
-                                    <option value="BURGER">🍔 Burger</option>
-                                    <option value="TIKKA">🍗 Tikka</option>
-                                    <option value="WRAPS">🌯 Wraps</option>
-                                    <option value="TACO">🌮 Taco</option>
-                                    <option value="MOMO">🥟 Momo</option>
-                                    <option value="CHINESE_RICE_COMBO">🍚 Chinese Rice Combo</option>
-                                    <option value="CHINESE_NOODLES_COMBO">🍜 Chinese Noodles Combo</option>
-                                    <option value="CHINESE_PASTA">🍝 Chinese Pasta</option>
-                                    <option value="PIZZA">🍕 Pizza</option>
-                                    <option value="FUSION_FOODS">🌟 Fusion Foods</option>
+                                    {allCategoryList.filter(c => c.section === 'KITCHEN_FOOD').map(cat => (
+                                        <option key={cat.key} value={cat.key}>{cat.label}</option>
+                                    ))}
                                 </optgroup>
                             </select>
                         </div>
@@ -714,20 +839,35 @@ export default function MenuManager({ user }: { user: any }) {
 
               {/* Instructions / Template Download */}
               {bulkFileItems.length === 0 && (
-                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                    Make sure your CSV has these exact columns: <br/>
-                    <code style={{ fontSize: '11px', background: 'rgba(0,0,0,0.5)', padding: '4px 8px', borderRadius: '4px', display: 'inline-block', marginTop: '8px', color: 'var(--accent-gold)' }}>ItemName, Category, Price, Description, Image, IsVeg, ApplyGst</code>
+                <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      Make sure your CSV has these exact columns: <br/>
+                      <code style={{ fontSize: '11px', background: 'rgba(0,0,0,0.5)', padding: '4px 8px', borderRadius: '4px', display: 'inline-block', marginTop: '6px', color: 'var(--accent-gold)' }}>ItemName, Category, Price, Description, Image, IsVeg, ApplyGst</code>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button 
+                        type="button"
+                        onClick={downloadSampleTemplate}
+                        style={{ background: 'rgba(255, 255, 255, 0.08)', color: '#ffffff', border: '1px solid rgba(255, 255, 255, 0.2)', padding: '10px 14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+                      >
+                        <Download size={16} />
+                        Download Sample Excel / CSV
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={downloadCurrentMenu}
+                        style={{ background: 'rgba(0, 210, 255, 0.1)', color: '#00d2ff', border: '1px solid rgba(0, 210, 255, 0.2)', padding: '10px 14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(0, 210, 255, 0.2)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(0, 210, 255, 0.1)'}
+                      >
+                        <Download size={16} />
+                        Export Current Menu (Excel / CSV)
+                      </button>
+                    </div>
                   </div>
-                  <button 
-                    onClick={downloadCsvTemplate}
-                    style={{ background: 'rgba(0, 210, 255, 0.1)', color: '#00d2ff', border: '1px solid rgba(0, 210, 255, 0.2)', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(0, 210, 255, 0.2)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(0, 210, 255, 0.1)'}
-                  >
-                    <Download size={16} />
-                    Download Existing Menu (CSV)
-                  </button>
                 </div>
               )}
 
@@ -851,6 +991,122 @@ export default function MenuManager({ user }: { user: any }) {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Add New Category Modal */}
+      {showAddCategoryModal && (
+        <div className="modal-overlay" style={{
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+            background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(16px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000
+        }}>
+          <div className="glass-card" style={{
+              width: '100%', maxWidth: '460px', display: 'flex', flexDirection: 'column',
+              padding: '28px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '20px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.6)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div>
+                <h3 style={{ fontSize: '20px', fontWeight: '900', margin: 0 }}>Add Menu Category</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '4px 0 0' }}>
+                  Choose whether items in this category route to Kitchen or Ready section.
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => { setShowAddCategoryModal(false); setNewCatName(''); }} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCategory} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div className="input-group">
+                <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: '8px', display: 'block' }}>
+                  Category Name
+                </label>
+                <input 
+                  type="text" 
+                  className="input-premium" 
+                  placeholder="e.g. Desserts, Mocktails, Rolls..." 
+                  value={newCatName}
+                  onChange={e => setNewCatName(e.target.value)}
+                  autoFocus
+                  required 
+                />
+              </div>
+
+              <div className="input-group">
+                <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: '8px', display: 'block' }}>
+                  Section / Routing
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setNewCatSection('READY_FOOD')}
+                    style={{
+                      padding: '14px 12px',
+                      borderRadius: '12px',
+                      border: newCatSection === 'READY_FOOD' ? '2px solid #ffb36a' : '1px solid rgba(255,255,255,0.08)',
+                      background: newCatSection === 'READY_FOOD' ? 'rgba(255, 179, 106, 0.12)' : 'rgba(255,255,255,0.02)',
+                      color: newCatSection === 'READY_FOOD' ? '#ffb36a' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <span style={{ fontSize: '20px' }}>🍿</span>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold' }}>Ready Food</span>
+                    <span style={{ fontSize: '10px', opacity: 0.7 }}>Beverages, Popcorn, etc.</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNewCatSection('KITCHEN_FOOD')}
+                    style={{
+                      padding: '14px 12px',
+                      borderRadius: '12px',
+                      border: newCatSection === 'KITCHEN_FOOD' ? '2px solid #00d2ff' : '1px solid rgba(255,255,255,0.08)',
+                      background: newCatSection === 'KITCHEN_FOOD' ? 'rgba(0, 210, 255, 0.12)' : 'rgba(255,255,255,0.02)',
+                      color: newCatSection === 'KITCHEN_FOOD' ? '#00d2ff' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <span style={{ fontSize: '20px' }}>🔥</span>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold' }}>Kitchen Food</span>
+                    <span style={{ fontSize: '10px', opacity: 0.7 }}>Cooked, Meals, Burgers</span>
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                <button 
+                  type="button" 
+                  onClick={() => { setShowAddCategoryModal(false); setNewCatName(''); }}
+                  style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.05)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-lucrative" 
+                  style={{ flex: 2, padding: '12px' }}
+                >
+                  Create Category
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

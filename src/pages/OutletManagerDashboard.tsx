@@ -58,7 +58,13 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
       })
       .subscribe();
 
+    // Fallback polling every 10 seconds to guarantee fresh orders even if realtime drops
+    const pollInterval = setInterval(() => {
+      fetchOrders();
+    }, 10000);
+
     return () => {
+      clearInterval(pollInterval);
       supabase.removeChannel(orderSubscription);
       supabase.removeChannel(msgSubscription);
     };
@@ -186,22 +192,38 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }
   };
 
-  const toggleItemDelivered = async (orderId: string, currentItems: any[], itemIndex: number) => {
-    const newItems = [...currentItems];
-    const item = newItems[itemIndex];
-    const isDelivered = !item.is_delivered;
-    newItems[itemIndex] = { 
-      ...item, 
-      is_delivered: isDelivered,
-      kds_status: isDelivered ? 'DELIVERED' : 'READY'
-    };
+  const safeParseItems = (itemsString: any) => {
+    try {
+      return typeof itemsString === 'string' ? JSON.parse(itemsString) : (Array.isArray(itemsString) ? itemsString : []);
+    } catch (e) {
+      return [];
+    }
+  };
+
+  const toggleItemDelivered = async (orderId: string, itemId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    const currentItems = safeParseItems(order.items);
+    const updatedItems = currentItems.map((item: any) => {
+      const currentId = item.item_id || item.food_id;
+      if (currentId === itemId) {
+        const nextDelivered = !item.is_delivered;
+        return { 
+          ...item, 
+          is_delivered: nextDelivered,
+          kds_status: nextDelivered ? 'DELIVERED' : 'PREPARING'
+        };
+      }
+      return item;
+    });
     
-    // Recalculate status
+    // Recalculate status based on all items
     let finalOrderStatus = 'PREPARING';
-    const allDelivered = newItems.every((item: any) => item.kds_status === 'DELIVERED' || item.is_delivered === true);
-    const anyPreparing = newItems.some((item: any) => item.kds_status === 'PREPARING');
-    const anyReady = newItems.some((item: any) => item.kds_status === 'READY');
-    const allReadyOrDelivered = newItems.every((item: any) => item.kds_status === 'READY' || item.kds_status === 'DELIVERED' || item.is_delivered === true);
+    const allDelivered = updatedItems.every((item: any) => item.kds_status === 'DELIVERED' || item.is_delivered === true);
+    const anyPreparing = updatedItems.some((item: any) => item.kds_status === 'PREPARING' || (!item.kds_status && !item.is_delivered));
+    const anyReady = updatedItems.some((item: any) => item.kds_status === 'READY');
+    const allReadyOrDelivered = updatedItems.every((item: any) => item.kds_status === 'READY' || item.kds_status === 'DELIVERED' || item.is_delivered === true);
 
     if (allDelivered) {
       finalOrderStatus = 'DELIVERED';
@@ -212,10 +234,10 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }
 
     const previousOrders = [...orders];
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: newItems, status: finalOrderStatus } : o));
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, status: finalOrderStatus } : o));
 
     try {
-      const { error } = await supabase.from('orders').update({ items: newItems, status: finalOrderStatus }).eq('id', orderId);
+      const { error } = await supabase.from('orders').update({ items: updatedItems, status: finalOrderStatus }).eq('id', orderId);
       if (error) throw error;
     } catch (e) {
       console.error("Failed to toggle delivery status:", e);
@@ -226,14 +248,6 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
   const openChat = (order: Order) => {
     setActiveChat(order);
     setUnreadMessages(prev => ({ ...prev, [order.id]: false }));
-  };
-
-  const safeParseItems = (itemsString: any) => {
-    try {
-      return typeof itemsString === 'string' ? JSON.parse(itemsString) : itemsString;
-    } catch (e) {
-      return [];
-    }
   };
 
   // Helper to filter order items that belong to the active screen tab
@@ -263,31 +277,25 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     });
   };
 
-  // Helper to construct partial orders containing only items matching KDS status & Tab
+  // Helper to construct partial orders containing only items matching Tab and Order Status
   const getPartialOrdersForTabAndStatus = (tab: string | number, status: string) => {
     return orders.map(order => {
       const matchingItems = filterOrderItemsForTab(order, tab);
-      const statusItems = matchingItems.filter((item: any) => {
-        const itemStatus = item.kds_status || 'PENDING';
-        const isDelivered = item.is_delivered === true || itemStatus === 'DELIVERED';
-        
-        if (status === 'PENDING') {
-          return itemStatus === 'PENDING' && !isDelivered;
-        }
-        if (status === 'PREPARING') {
-          return itemStatus === 'PREPARING' && !isDelivered;
-        }
-        if (status === 'READY') {
-          return itemStatus === 'READY' && !isDelivered;
-        }
-        return false;
-      });
+      if (matchingItems.length === 0) return null;
 
-      if (statusItems.length === 0) return null;
+      if (status === 'PENDING') {
+        if (order.status !== 'PENDING') return null;
+      } else if (status === 'PREPARING') {
+        if (order.status !== 'PREPARING') return null;
+      } else if (status === 'READY') {
+        if (order.status !== 'READY') return null;
+      } else {
+        return null;
+      }
 
       return {
         ...order,
-        matchingItems: statusItems
+        matchingItems: matchingItems
       };
     }).filter(Boolean) as Order[];
   };
@@ -312,8 +320,9 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
               key={order.id} 
               order={order} 
               hasUnread={unreadMessages[order.id]} 
-              onAction={() => updateItemKdsStatus(order.id, order.matchingItems!.map((i: any) => i.item_id || i.food_id), 'PREPARING')} 
+              onAction={() => updateStatus(order.id, 'PREPARING')} 
               onChat={() => openChat(order)} 
+              onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
               actionLabel="Accept & Prepare" 
               actionColor="var(--primary-glow)" 
               items={order.matchingItems!} 
@@ -335,9 +344,10 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
               key={order.id} 
               order={order} 
               hasUnread={unreadMessages[order.id]} 
-              onAction={() => updateItemKdsStatus(order.id, order.matchingItems!.map((i: any) => i.item_id || i.food_id), 'READY')} 
+              onAction={() => updateStatus(order.id, 'READY')} 
               onChat={() => openChat(order)} 
-              actionLabel="Mark Ready" 
+              onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
+              actionLabel="Mark All Ready" 
               actionColor="var(--secondary-glow)" 
               items={order.matchingItems!} 
             />
@@ -358,9 +368,10 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
               key={order.id} 
               order={order} 
               hasUnread={unreadMessages[order.id]} 
-              onAction={() => updateItemKdsStatus(order.id, order.matchingItems!.map((i: any) => i.item_id || i.food_id), 'DELIVERED')} 
+              onAction={() => updateStatus(order.id, 'DELIVERED')} 
               onChat={() => openChat(order)} 
-              actionLabel="Delivered" 
+              onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
+              actionLabel="All Delivered" 
               actionColor="#4CAF50" 
               items={order.matchingItems!} 
             />
@@ -467,6 +478,24 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
           margin: '-12px 0 8px'
         }}
       >
+        <button
+          onClick={() => setActiveTab('ALL')}
+          style={{
+            padding: '10px 20px',
+            background: activeTab === 'ALL' ? 'var(--primary-glow)' : 'rgba(255,255,255,0.02)',
+            color: activeTab === 'ALL' ? 'white' : 'var(--text-secondary)',
+            border: activeTab === 'ALL' ? '1px solid var(--primary-glow)' : '1px solid rgba(255,255,255,0.05)',
+            borderRadius: '12px',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '8px',
+            transition: 'all 0.2s ease',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <Monitor size={16} />
+          <span>All Stations</span>
+        </button>
         {kdsConfigs.map(c => (
           <button
             key={c.screen_number}
@@ -524,7 +553,7 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
   hasUnread: boolean;
   onAction: () => void;
   onChat: () => void;
-  onToggleItem?: (itemIndex: number) => void;
+  onToggleItem?: (itemId: string) => void;
   actionLabel: string;
   actionColor: string;
   items: any[];
@@ -573,15 +602,6 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
   const timeStr = utcDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const displayOrderId = order.display_id || order.id?.substring(0,6).toUpperCase();
   const customerName = order.customer_profiles ? `${order.customer_profiles.first_name} ${order.customer_profiles.last_name}` : 'Demo Customer';
-
-  // Determine button disabled state
-  const isButtonDisabled = () => {
-    // If it's the traditional dashboard and preparing, we must wait for all items to be deliverable
-    if (order.status === 'PREPARING' && onToggleItem) {
-      return !items.every(i => i.is_delivered);
-    }
-    return false;
-  };
 
   return (
     <div 
@@ -655,47 +675,100 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
         </div>
       )}
 
-      <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '12px' }}>
-        {items?.map((item, idx) => (
-          <div key={idx} style={{ marginBottom: idx !== items.length - 1 ? '10px' : 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {item.is_combo && (
-                  <span style={{ fontSize: '8px', fontWeight: 'bold', padding: '1px 4px', background: 'linear-gradient(90deg,#FF6B35,#FF2D55)', color: 'white', borderRadius: '3px' }}>COMBO</span>
+      <div style={{ background: 'rgba(0,0,0,0.25)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}>
+        {items?.map((item, idx) => {
+          const itemId = item.item_id || item.food_id || String(idx);
+          const isDelivered = item.is_delivered === true || item.kds_status === 'DELIVERED';
+
+          return (
+            <div 
+              key={itemId || idx} 
+              style={{ 
+                marginBottom: idx !== items.length - 1 ? '12px' : 0,
+                paddingBottom: idx !== items.length - 1 ? '12px' : 0,
+                borderBottom: idx !== items.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                  {item.is_combo && (
+                    <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '2px 5px', background: 'linear-gradient(90deg,#FF6B35,#FF2D55)', color: 'white', borderRadius: '4px' }}>COMBO</span>
+                  )}
+                  <span style={{ 
+                    fontSize: '14px', 
+                    fontWeight: 600,
+                    textDecoration: isDelivered ? 'line-through' : 'none', 
+                    color: isDelivered ? '#4CAF50' : 'inherit',
+                    opacity: isDelivered ? 0.75 : 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {item.quantity}x {item.food_name || item.name}
+                  </span>
+                  <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', padding: '2px 6px', borderRadius: '4px' }}>
+                    {item.food_category || 'Classics'}
+                  </span>
+                </div>
+
+                {/* Individual Item Tick Button */}
+                {onToggleItem && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleItem(itemId);
+                    }}
+                    title={isDelivered ? "Mark as Not Delivered" : "Mark Ready & Delivered"}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '4px 10px',
+                      borderRadius: '8px',
+                      border: isDelivered ? '1px solid #4CAF50' : '1px solid rgba(255,255,255,0.2)',
+                      background: isDelivered ? 'rgba(76,175,80,0.18)' : 'rgba(255,255,255,0.06)',
+                      color: isDelivered ? '#4CAF50' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      transition: 'all 0.2s ease',
+                      flexShrink: 0
+                    }}
+                  >
+                    <CheckCircle size={14} color={isDelivered ? '#4CAF50' : 'currentColor'} />
+                    <span>{isDelivered ? 'Delivered' : 'Ready / Deliver'}</span>
+                  </button>
                 )}
-                <span style={{ textDecoration: item.is_delivered ? 'line-through' : 'none', color: item.is_delivered ? 'var(--text-muted)' : 'inherit' }}>
-                  {item.quantity}x {item.food_name || item.name}
-                </span>
-                <span style={{ fontSize: '9px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', padding: '1px 4px', borderRadius: '3px' }}>
-                  {item.food_category || 'Classics'}
-                </span>
               </div>
-              {order.status === 'PREPARING' && onToggleItem && (
-                <input type="checkbox" checked={item.is_delivered || false} onChange={() => onToggleItem(idx)} style={{ cursor: 'pointer', accentColor: actionColor }} />
+              {item.item_note && (
+                <div style={{ fontSize: '11px', color: 'var(--accent-gold)', fontStyle: 'italic', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Info size={10} opacity={0.7} /> <span>{item.item_note}</span>
+                </div>
+              )}
+              {item.addons && item.addons.length > 0 && (
+                <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px', paddingLeft: '8px', borderLeft: '2px solid rgba(255,255,255,0.2)' }}>
+                  {item.addons.flatMap((a: any) => a.selectedOptions).map((opt: any, i: number) => (
+                    <div key={i}>+ {opt.name}</div>
+                  ))}
+                </div>
               )}
             </div>
-            {item.item_note && (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Info size={10} opacity={0.5} /> <span>{item.item_note}</span>
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <button 
         onClick={onAction} 
-        disabled={isButtonDisabled()}
         style={{ 
             width: '100%', 
             padding: '12px', 
-            background: isButtonDisabled() ? 'rgba(255,255,255,0.05)' : `${urgency.color}15`, 
-            color: isButtonDisabled() ? 'rgba(255,255,255,0.3)' : urgency.color, 
+            background: `${urgency.color}15`, 
+            color: urgency.color, 
             border: `1px solid ${urgency.color}40`, 
             borderRadius: '12px', 
             fontWeight: 'bold', 
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', 
-            cursor: isButtonDisabled() ? 'not-allowed' : 'pointer' 
+            cursor: 'pointer' 
         }}>
         <CheckCircle size={18} /> {actionLabel}
       </button>

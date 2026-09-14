@@ -16,6 +16,7 @@ import SystemHealth from './pages/SystemHealth'
 import OffersManager from './pages/OffersManager'
 import KDSConfig from './pages/KDSConfig'
 import InventoryManager from './pages/InventoryManager'
+import AddonManager from './pages/AddonManager'
 import './App.css'
 
 function App() {
@@ -98,6 +99,7 @@ function TabRenderer({ role, user, currentTab }) {
     if (currentTab === 'offers' && (p.includes('offers') || p.includes('menu'))) return <OffersManager user={user} />;
     if (currentTab === 'inventory' && (p.includes('inventory') || p.includes('menu'))) return <InventoryManager user={user} />;
     if (currentTab === 'kds-config' && (p.includes('kds-config') || p.includes('menu'))) return <KDSConfig user={user} />;
+    if (currentTab === 'addons' && (p.includes('addons') || p.includes('menu'))) return <AddonManager user={user} />;
     if (currentTab === 'health') return <SystemHealth />;
 
     // Fallbacks

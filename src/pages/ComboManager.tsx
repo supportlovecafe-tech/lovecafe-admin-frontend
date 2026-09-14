@@ -111,7 +111,7 @@ export default function ComboManager({ user }: { user: any }) {
     }
     setLoading(true);
     const payload = {
-      cinema_id: form.cinemaId, name: form.name, description: form.description,
+      cinema_id: null, name: form.name, description: form.description,
       price: parseFloat(form.price), original_price: form.originalPrice ? parseFloat(form.originalPrice) : null,
       category: form.category, image_url: form.imageUrl, apply_gst: form.applyGst, is_veg: form.isVeg
     };
