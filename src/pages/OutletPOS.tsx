@@ -34,6 +34,7 @@ export default function OutletPOS({ user }: { user: any }) {
   // Receipt Modal State
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastOrder, setLastOrder] = useState<any>(null);
+  const [receiptTab, setReceiptTab] = useState<'customer' | 'kitchen'>('customer');
   const [outbox, setOutbox] = useState<any[]>([]);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   
@@ -548,10 +549,12 @@ export default function OutletPOS({ user }: { user: any }) {
   const handleNewOrder = () => {
     setShowReceipt(false);
     setLastOrder(null);
+    setReceiptTab('customer');
     setCustomerPhone('');
     setScreenNumber('');
     setSeatNumber('');
     setPaymentMode('Cash');
+    setCollectedCash('');
   };
 
 
@@ -695,35 +698,14 @@ export default function OutletPOS({ user }: { user: any }) {
                                 onClick={() => handleItemClick(food)}
                                 className={`pos-food-card ${inCartQty > 0 ? 'in-cart' : ''}`}
                             >
-                                {/* Food Image Thumbnail or Fallback */}
-                                <div className="pos-food-img-wrap">
-                                    {food.image_url ? (
-                                        <img 
-                                            src={food.image_url} 
-                                            alt={food.name}
-                                            className="pos-food-img"
-                                            loading="lazy"
-                                            onError={(e) => {
-                                                (e.target as HTMLElement).style.display = 'none';
-                                                const fallback = (e.target as HTMLElement).nextElementSibling;
-                                                if (fallback) (fallback as HTMLElement).style.display = 'flex';
-                                            }}
-                                        />
-                                    ) : null}
-                                    <div 
-                                        className="pos-food-img-fallback" 
-                                        style={{ display: food.image_url ? 'none' : 'flex' }}
-                                    >
-                                        🍽️
-                                    </div>
-
-                                    {/* Veg/Non-Veg Badge Overlay */}
+                                <div className="pos-food-card-top">
+                                    {/* Veg/Non-Veg Badge */}
                                     <div className="pos-food-badge-veg" title={food.is_veg !== false ? 'Vegetarian' : 'Non-Vegetarian'}>
                                         <div style={{
                                             width: 14, height: 14,
                                             border: `2px solid ${food.is_veg !== false ? '#22c55e' : '#ef4444'}`,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            borderRadius: '3px', background: 'rgba(0,0,0,0.65)'
+                                            borderRadius: '3px', background: 'rgba(0,0,0,0.5)'
                                         }}>
                                             <div style={{
                                                 width: 6, height: 6, borderRadius: '50%',
@@ -733,7 +715,7 @@ export default function OutletPOS({ user }: { user: any }) {
                                     </div>
 
                                     {/* Badges: In-Cart or Customizable */}
-                                    <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, alignItems: 'center', zIndex: 2 }}>
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                                         {inCartQty > 0 && (
                                             <span className="pos-badge-incart">
                                                 {inCartQty} in cart
@@ -747,23 +729,25 @@ export default function OutletPOS({ user }: { user: any }) {
                                     </div>
                                 </div>
 
-                                {/* Food Details */}
-                                <div className="pos-food-info">
-                                    <div className="pos-food-name" title={food.name}>{food.name}</div>
-                                    <div className="pos-food-bottom-row">
-                                        <div className="pos-food-price">₹{food.price}</div>
-                                        <button 
-                                            type="button" 
-                                            className="pos-food-add-btn" 
-                                            aria-label={`Add ${food.name}`}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleItemClick(food);
-                                            }}
-                                        >
-                                            <Plus size={15} strokeWidth={3} />
-                                        </button>
-                                    </div>
+                                {/* Food Name */}
+                                <div className="pos-food-name" title={food.name}>
+                                    {food.name}
+                                </div>
+
+                                {/* Bottom row: Price & Add button */}
+                                <div className="pos-food-bottom-row">
+                                    <div className="pos-food-price">₹{food.price}</div>
+                                    <button 
+                                        type="button" 
+                                        className="pos-food-add-btn" 
+                                        aria-label={`Add ${food.name}`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleItemClick(food);
+                                        }}
+                                    >
+                                        <Plus size={15} strokeWidth={3} />
+                                    </button>
                                 </div>
                             </div>
                         );
@@ -1085,155 +1069,260 @@ export default function OutletPOS({ user }: { user: any }) {
             </div>
         </div>
 
-        {/* Receipt Modal */}
+        {/* Receipt / Billing Modal */}
         {showReceipt && lastOrder && (
-            <div className="modal-overlay" style={{
-                position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-                background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
-            }}>
-                <div className="glass-card receipt-modal" style={{
-                    width: '100%', maxWidth: '800px', display: 'flex', flexDirection: 'column',
-                    maxHeight: '90vh', overflow: 'hidden'
-                }}>
-                    {/* Modal Header */}
-                    <div className="no-print" style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h2 style={{ margin: 0, color: 'var(--primary-glow)' }}>Order Placed Successfully!</h2>
-                        <div style={{ display: 'flex', gap: '12px' }}>
-                            <button onClick={handlePrint} className="btn-lucrative" style={{ padding: '10px 20px', display: 'flex', gap: '8px', alignItems: 'center', background: 'rgba(255,255,255,0.1)', color: 'white' }}>
-                                <Printer size={18} /> Print Bill
-                            </button>
-                            <button onClick={handleNewOrder} className="btn-lucrative" style={{ padding: '10px 20px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                <RefreshCcw size={18} /> New Order
+            <div className="pos-billing-overlay no-print-bg">
+                <div className="pos-billing-dialog">
+                    {/* Header */}
+                    <div className="pos-billing-header no-print">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                            <div className="pos-pulse-dot" />
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ fontWeight: 800, fontSize: '15px', color: '#fff', lineHeight: 1.2 }}>Order Placed!</div>
+                                <div style={{ fontSize: '12px', color: 'var(--accent-gold)', fontWeight: 700 }}>{lastOrder.display_id}</div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button 
+                                type="button" 
+                                onClick={handleNewOrder} 
+                                className="pos-billing-close-btn" 
+                                title="Close and Start New Order"
+                            >
+                                <X size={18} />
                             </button>
                         </div>
                     </div>
 
-                    {/* Printable Area */}
-                    <div className="printable-area" style={{ display: 'flex', padding: '32px', gap: '40px', overflowY: 'auto', background: 'white', color: 'black' }}>
-                        
-                        {/* Kitchen Copy */}
-                        <div style={{ flex: 1, border: '1px dashed #ccc', padding: '24px', fontFamily: 'monospace' }}>
-                            <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '2px dashed #000', paddingBottom: '10px' }}>
-                                <h3 style={{ margin: '0 0 8px 0', fontSize: '24px' }}>KITCHEN COPY</h3>
-                                <div>Order: {lastOrder.display_id}</div>
-                                <div>Time: {new Date(lastOrder.timestamp).toLocaleTimeString()}</div>
-                                <div style={{ marginTop: '8px', fontWeight: 'bold' }}>LOC: {lastOrder.location}</div>
-                            </div>
-                            <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid #000' }}>
-                                        <th style={{ padding: '8px 0' }}>QTY</th>
-                                        <th style={{ padding: '8px 0' }}>ITEM</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {lastOrder.items.map((item: any, idx: number) => (
-                                        <tr key={idx} style={{ borderBottom: '1px dashed #ccc' }}>
-                                            <td style={{ padding: '12px 0', fontWeight: 'bold', fontSize: '16px' }}>{item.quantity}x</td>
-                                            <td style={{ padding: '12px 0', fontSize: '16px' }}>
-                                              {item.is_combo && <span style={{ fontSize: '10px', background: '#FF6B35', color: 'white', padding: '1px 5px', borderRadius: '3px', marginRight: '6px', fontWeight: 'bold' }}>COMBO</span>}
-                                              {item.food_name}
-                                              {item.item_note && <div style={{ fontSize: '11px', color: '#555', fontStyle: 'italic', marginTop: '2px' }}>📝 {item.item_note}</div>}
-                                              {item.addons && item.addons.length > 0 && (
-                                                  <div style={{ fontSize: '11px', color: '#333', marginTop: '4px', paddingLeft: '8px', borderLeft: '2px solid #ccc' }}>
-                                                      {item.addons.flatMap((a: any) => a.selectedOptions).map((opt: any, i: number) => (
-                                                          <div key={i}>+ {opt.name}</div>
-                                                      ))}
-                                                  </div>
-                                              )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                            </div>
+                    {/* Action Bar (Print & New Order) */}
+                    <div className="pos-billing-actions-row no-print">
+                        {/* Tab Switcher */}
+                        <div className="pos-receipt-tabs">
+                            <button 
+                                type="button"
+                                onClick={() => setReceiptTab('customer')}
+                                className={`pos-receipt-tab-btn ${receiptTab === 'customer' ? 'active' : ''}`}
+                            >
+                                Customer Bill
+                            </button>
+                            <button 
+                                type="button"
+                                onClick={() => setReceiptTab('kitchen')}
+                                className={`pos-receipt-tab-btn ${receiptTab === 'kitchen' ? 'active' : ''}`}
+                            >
+                                Kitchen Token
+                            </button>
                         </div>
 
-                        {/* Customer Copy */}
-                        <div className="receipt-modal" style={{ flex: 1, border: '1px solid #ccc', padding: '24px', fontFamily: 'monospace', position: 'relative', overflow: 'hidden', minHeight: '500px', background: 'white', color: 'black' }}>
-                            <div style={{ position: 'relative', zIndex: 1 }}>
-                                <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '2px solid #000', paddingBottom: '10px' }}>
-                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '24px' }}>LOVE CAFE</h3>
-                                    <div>Customer Receipt</div>
-                                    {lastOrder.metadata?.outlet_number && (
-                                        <div style={{ fontWeight: 'bold', marginTop: '4px' }}>Outlet ID: {lastOrder.metadata.outlet_number}</div>
-                                    )}
-                                    <div>Order: {lastOrder.display_id}</div>
-                                    <div>Time: {new Date(lastOrder.timestamp).toLocaleTimeString()}</div>
-                                    <div style={{ marginTop: '8px', fontWeight: 'bold' }}>{lastOrder.location}</div>
-                                </div>
-                            <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', marginBottom: '20px' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid #000' }}>
-                                        <th style={{ padding: '8px 0' }}>QTY</th>
-                                        <th style={{ padding: '8px 0' }}>ITEM</th>
-                                        <th style={{ padding: '8px 0', textAlign: 'right' }}>PRICE</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {lastOrder.items.map((item: any, idx: number) => (
-                                        <tr key={idx} style={{ borderBottom: '1px dashed #ccc' }}>
-                                            <td style={{ padding: '8px 0' }}>{item.quantity}</td>
-                                            <td style={{ padding: '8px 0' }}>
-                                              {item.is_combo && <span style={{ fontSize: '9px', background: '#FF6B35', color: 'white', padding: '1px 4px', borderRadius: '3px', marginRight: '5px', fontWeight: 'bold' }}>COMBO</span>}
-                                              {item.food_name}
-                                              {item.item_note && <div style={{ fontSize: '10px', color: '#666', fontStyle: 'italic', marginTop: '2px' }}>📝 {item.item_note}</div>}
-                                              {item.addons && item.addons.length > 0 && (
-                                                  <div style={{ fontSize: '10px', color: '#555', marginTop: '2px' }}>
-                                                      {item.addons.flatMap((a: any) => a.selectedOptions).map((opt: any, i: number) => (
-                                                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                              <span>+ {opt.name}</span>
-                                                              {opt.price > 0 && <span>₹{opt.price}</span>}
-                                                          </div>
-                                                      ))}
-                                                  </div>
-                                              )}
-                                            </td>
-                                            <td style={{ padding: '8px 0', textAlign: 'right' }}>₹{item.food_price * item.quantity}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                            <div style={{ borderTop: '1px solid #000', paddingTop: '10px', marginBottom: '10px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
-                                    <span>Subtotal</span>
-                                    <span>₹{(lastOrder.metadata?.subtotal || (lastOrder.total_amount / 1.06)).toFixed(2)}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
-                                    <span>CGST (2.5%)</span>
-                                    <span>₹{(lastOrder.metadata?.cgst || ((lastOrder.total_amount / 1.06) * 0.025)).toFixed(2)}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
-                                    <span>SGST (2.5%)</span>
-                                    <span>₹{(lastOrder.metadata?.sgst || ((lastOrder.total_amount / 1.06) * 0.025)).toFixed(2)}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
-                                    <span>Platform Fee (1%)</span>
-                                    <span>₹{(lastOrder.metadata?.platform_charges || ((lastOrder.total_amount / 1.06) * 0.01)).toFixed(2)}</span>
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '20px', borderTop: '2px solid #000', paddingTop: '10px' }}>
-                                <span>TOTAL</span>
-                                <span>₹{lastOrder.total_amount.toFixed(2)}</span>
-                            </div>
-                            {lastOrder.payment_method === 'POS_CASH' && lastOrder.collected_cash > 0 && (
-                                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #ccc' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
-                                        <span>Cash Collected</span>
-                                        <span>₹{lastOrder.collected_cash.toFixed(2)}</span>
+                        {/* Fast Action Buttons */}
+                        <div className="pos-billing-btn-group">
+                            <button onClick={handlePrint} className="pos-billing-btn-print">
+                                <Printer size={16} /> Print Bill
+                            </button>
+                            <button onClick={handleNewOrder} className="pos-billing-btn-next">
+                                <RefreshCcw size={16} /> New Order
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Scrollable Receipt Body */}
+                    <div className="pos-billing-scroll-area">
+                        {/* Printable Thermal Paper Slip */}
+                        <div className="pos-thermal-slip">
+                            {receiptTab === 'customer' ? (
+                                <>
+                                    {/* Customer Receipt Header */}
+                                    <div style={{ textAlign: 'center', paddingBottom: '10px', borderBottom: '2px solid #000', marginBottom: '12px' }}>
+                                        <div style={{ fontSize: '22px', fontWeight: 900, letterSpacing: '1px', lineHeight: '1.1', textTransform: 'uppercase' }}>
+                                            {lastOrder.metadata?.cinema_name || 'LOVE CAFE'}
+                                        </div>
+                                        <div style={{ fontSize: '11px', letterSpacing: '1.5px', marginTop: '3px', textTransform: 'uppercase', fontWeight: 700 }}>
+                                            Customer Receipt
+                                        </div>
+                                        {lastOrder.metadata?.outlet_number && (
+                                            <div style={{ fontSize: '11px', fontWeight: 800, marginTop: '2px' }}>
+                                                Outlet ID: {lastOrder.metadata.outlet_number}
+                                            </div>
+                                        )}
+                                        <div style={{ fontSize: '13px', fontWeight: 800, marginTop: '4px', background: '#000', color: '#fff', padding: '2px 8px', display: 'inline-block', borderRadius: '3px' }}>
+                                            Order: {lastOrder.display_id}
+                                        </div>
+                                        <div style={{ fontSize: '11px', marginTop: '6px', color: '#444' }}>
+                                            {new Date(lastOrder.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} • {new Date(lastOrder.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                        </div>
+                                        <div style={{ fontSize: '12px', fontWeight: 800, marginTop: '4px' }}>
+                                            {lastOrder.location}
+                                        </div>
+                                        {lastOrder.customer_phone && (
+                                            <div style={{ fontSize: '11px', color: '#333', marginTop: '2px' }}>
+                                                Customer: +91 {lastOrder.customer_phone}
+                                            </div>
+                                        )}
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 'bold' }}>
-                                        <span>Change Returned</span>
-                                        <span>₹{lastOrder.return_cash.toFixed(2)}</span>
+
+                                    {/* Items Table */}
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '10px' }}>
+                                        <thead>
+                                            <tr style={{ borderBottom: '1px solid #000' }}>
+                                                <th style={{ textAlign: 'left', padding: '4px 0', width: '38px', fontWeight: 800 }}>QTY</th>
+                                                <th style={{ textAlign: 'left', padding: '4px 0', fontWeight: 800 }}>ITEM</th>
+                                                <th style={{ textAlign: 'right', padding: '4px 0', width: '65px', fontWeight: 800 }}>PRICE</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {lastOrder.items.map((item: any, idx: number) => (
+                                                <tr key={idx} style={{ borderBottom: '1px dashed #ddd' }}>
+                                                    <td style={{ padding: '6px 0', verticalAlign: 'top', fontWeight: 800 }}>{item.quantity}x</td>
+                                                    <td style={{ padding: '6px 0', verticalAlign: 'top' }}>
+                                                        <div style={{ fontWeight: 700, fontSize: '12.5px' }}>
+                                                            {item.is_combo && <span style={{ fontSize: '9px', background: '#000', color: '#fff', padding: '1px 3px', borderRadius: '2px', marginRight: '4px' }}>COMBO</span>}
+                                                            {item.food_name}
+                                                        </div>
+                                                        {item.item_note && (
+                                                            <div style={{ fontSize: '10px', color: '#555', fontStyle: 'italic', marginTop: '1px' }}>
+                                                                📝 {item.item_note}
+                                                            </div>
+                                                        )}
+                                                        {item.addons && item.addons.length > 0 && (
+                                                            <div style={{ fontSize: '10px', color: '#444', marginTop: '2px' }}>
+                                                                {item.addons.flatMap((a: any) => a.selectedOptions).map((opt: any, i: number) => (
+                                                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '6px' }}>
+                                                                        <span>+ {opt.name}</span>
+                                                                        {opt.price > 0 && <span>₹{opt.price}</span>}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td style={{ padding: '6px 0', textAlign: 'right', verticalAlign: 'top', fontWeight: 700 }}>
+                                                        ₹{(item.food_price * item.quantity).toFixed(2)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+
+                                    {/* Breakdown */}
+                                    <div style={{ borderTop: '1px dashed #000', paddingTop: '8px', marginBottom: '8px', fontSize: '12px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                            <span>Subtotal</span>
+                                            <span>₹{(lastOrder.metadata?.subtotal || (lastOrder.total_amount / 1.06)).toFixed(2)}</span>
+                                        </div>
+                                        {((lastOrder.metadata?.cgst || 0) > 0 || !lastOrder.metadata) && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                                <span>CGST (2.5%)</span>
+                                                <span>₹{(lastOrder.metadata?.cgst || ((lastOrder.total_amount / 1.06) * 0.025)).toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                        {((lastOrder.metadata?.sgst || 0) > 0 || !lastOrder.metadata) && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                                <span>SGST (2.5%)</span>
+                                                <span>₹{(lastOrder.metadata?.sgst || ((lastOrder.total_amount / 1.06) * 0.025)).toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                        {((lastOrder.metadata?.platform_charges || 0) > 0) && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                                <span>Platform Fee</span>
+                                                <span>₹{Number(lastOrder.metadata.platform_charges).toFixed(2)}</span>
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
+
+                                    {/* Total */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '18px', borderTop: '2px solid #000', borderBottom: '2px solid #000', padding: '6px 0', margin: '6px 0' }}>
+                                        <span>TOTAL</span>
+                                        <span>₹{lastOrder.total_amount.toFixed(2)}</span>
+                                    </div>
+
+                                    {/* Payment Info */}
+                                    <div style={{ fontSize: '12px', marginTop: '6px', paddingTop: '4px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                            <span>Payment Mode</span>
+                                            <span style={{ fontWeight: 800 }}>{lastOrder.payment_method === 'POS_CASH' ? 'CASH' : lastOrder.payment_method}</span>
+                                        </div>
+                                        {lastOrder.payment_method === 'POS_CASH' && lastOrder.collected_cash > 0 && (
+                                            <>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                                    <span>Cash Collected</span>
+                                                    <span>₹{Number(lastOrder.collected_cash).toFixed(2)}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '13px', background: '#f0fdf4', padding: '3px 6px', borderRadius: '4px' }}>
+                                                    <span>Change Returned</span>
+                                                    <span>₹{Number(lastOrder.return_cash).toFixed(2)}</span>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {/* Footer note */}
+                                    <div style={{ textAlign: 'center', marginTop: '16px', paddingTop: '10px', borderTop: '1px dashed #999', fontSize: '11px', color: '#555' }}>
+                                        <div>Thank you for visiting!</div>
+                                        <div style={{ fontWeight: 700, marginTop: '2px' }}>Please enjoy your movie 🎬</div>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    {/* Kitchen Token Header */}
+                                    <div style={{ textAlign: 'center', paddingBottom: '10px', borderBottom: '2px dashed #000', marginBottom: '12px' }}>
+                                        <div style={{ fontSize: '22px', fontWeight: 900, letterSpacing: '1px', textTransform: 'uppercase' }}>
+                                            KITCHEN TOKEN
+                                        </div>
+                                        <div style={{ fontSize: '18px', fontWeight: 900, marginTop: '4px', background: '#000', color: '#fff', padding: '3px 10px', display: 'inline-block', borderRadius: '4px' }}>
+                                            Order: {lastOrder.display_id}
+                                        </div>
+                                        <div style={{ fontSize: '12px', marginTop: '6px', fontWeight: 700 }}>
+                                            {new Date(lastOrder.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                        <div style={{ fontSize: '14px', fontWeight: 900, marginTop: '4px', background: '#fef08a', padding: '2px 8px', display: 'inline-block' }}>
+                                            {lastOrder.location}
+                                        </div>
+                                    </div>
+
+                                    {/* Kitchen Items */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                                        {lastOrder.items.map((item: any, idx: number) => (
+                                            <div key={idx} style={{ borderBottom: '1px dashed #999', paddingBottom: '8px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                                    <span style={{ fontSize: '18px', fontWeight: 900, minWidth: '32px' }}>{item.quantity}x</span>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ fontSize: '16px', fontWeight: 800 }}>
+                                                            {item.is_combo && <span style={{ fontSize: '10px', background: '#000', color: '#fff', padding: '1px 4px', borderRadius: '2px', marginRight: '4px' }}>COMBO</span>}
+                                                            {item.food_name}
+                                                        </div>
+                                                        {item.item_note && (
+                                                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#dc2626', marginTop: '2px' }}>
+                                                                ⚠️ Note: {item.item_note}
+                                                            </div>
+                                                        )}
+                                                        {item.addons && item.addons.length > 0 && (
+                                                            <div style={{ fontSize: '12px', marginTop: '2px', paddingLeft: '8px', borderLeft: '2px solid #000' }}>
+                                                                {item.addons.flatMap((a: any) => a.selectedOptions).map((opt: any, i: number) => (
+                                                                    <div key={i} style={{ fontWeight: 600 }}>+ {opt.name}</div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div style={{ textAlign: 'center', fontSize: '11px', color: '#666', borderTop: '1px dashed #999', paddingTop: '6px' }}>
+                                        Staff: {lastOrder.metadata?.staff_email || 'POS Terminal'}
+                                    </div>
+                                </>
                             )}
-                            <div style={{ textAlign: 'center', marginTop: '30px', fontSize: '12px' }}>
-                                Thank you for choosing Love Cafe!
-                            </div>
                         </div>
+                    </div>
 
+                    {/* Bottom Sticky Action Bar */}
+                    <div className="pos-billing-footer no-print">
+                        <button onClick={handlePrint} className="pos-footer-btn-print">
+                            <Printer size={18} /> Print Bill
+                        </button>
+                        <button onClick={handleNewOrder} className="pos-footer-btn-next">
+                            <ArrowRight size={18} /> Next Order
+                        </button>
                     </div>
                 </div>
             </div>

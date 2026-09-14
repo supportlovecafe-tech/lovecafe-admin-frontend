@@ -488,20 +488,28 @@ select option {
 
 .pos-food-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .pos-food-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
 }
 
-/* Rich Food Cards with Image Thumbnail */
+/* Compact POS Food Cards (No Image, Fast Touch, High Contrast) */
 .pos-food-card {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 18px;
-  overflow: hidden;
+  border-radius: 14px;
+  padding: 12px;
+  min-height: 104px;
   cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   box-sizing: border-box;
@@ -509,91 +517,58 @@ select option {
 .pos-food-card:hover {
   transform: translateY(-2px);
   border-color: rgba(255, 255, 255, 0.25);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
 }
 .pos-food-card:active {
   transform: scale(0.97);
 }
 .pos-food-card.in-cart {
   border-color: var(--primary-glow);
-  background: linear-gradient(160deg, rgba(255, 47, 146, 0.14) 0%, rgba(255, 255, 255, 0.03) 100%);
-  box-shadow: 0 4px 18px rgba(255, 47, 146, 0.25);
+  background: linear-gradient(160deg, rgba(255, 47, 146, 0.16) 0%, rgba(255, 255, 255, 0.04) 100%);
+  box-shadow: 0 0 0 1px var(--primary-glow), 0 4px 18px rgba(255, 47, 146, 0.25);
 }
 
-.pos-food-img-wrap {
-  position: relative;
-  width: 100%;
-  height: 95px;
-  background: rgba(0, 0, 0, 0.3);
-  overflow: hidden;
+.pos-food-card-top {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-}
-.pos-food-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s ease;
-}
-.pos-food-card:hover .pos-food-img {
-  transform: scale(1.05);
-}
-.pos-food-img-fallback {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 30px;
-  background: linear-gradient(135deg, rgba(255, 47, 146, 0.12) 0%, rgba(255, 107, 53, 0.06) 100%);
+  margin-bottom: 8px;
 }
 .pos-food-badge-veg {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 2;
-  border-radius: 4px;
+  display: flex;
+  align-items: center;
 }
 .pos-badge-incart {
   font-size: 10px;
   background: var(--primary-glow);
   color: white;
-  padding: 3px 8px;
-  border-radius: 8px;
+  padding: 2px 7px;
+  border-radius: 6px;
   font-weight: 800;
-  box-shadow: 0 2px 8px rgba(255, 47, 146, 0.5);
-  letter-spacing: 0.2px;
+  box-shadow: 0 2px 6px rgba(255, 47, 146, 0.4);
 }
 .pos-badge-customizable {
   font-size: 9px;
-  background: rgba(255, 47, 146, 0.85);
-  color: white;
-  padding: 3px 7px;
-  border-radius: 6px;
+  background: rgba(255, 47, 146, 0.25);
+  color: #ff7ebb;
+  border: 1px solid rgba(255, 47, 146, 0.4);
+  padding: 2px 6px;
+  border-radius: 5px;
   font-weight: 800;
-  letter-spacing: 0.4px;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  letter-spacing: 0.3px;
 }
 
-.pos-food-info {
-  padding: 10px 12px 12px;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  justify-content: space-between;
-}
 .pos-food-name {
   font-weight: 800;
-  font-size: 13.5px;
-  line-height: 1.25;
+  font-size: 14px;
+  line-height: 1.3;
   color: #FFFFFF;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  word-break: break-word;
 }
 .pos-food-bottom-row {
   display: flex;
@@ -604,8 +579,8 @@ select option {
 .pos-food-price {
   color: var(--accent-gold);
   font-weight: 900;
-  font-size: 17px;
-  letter-spacing: -0.3px;
+  font-size: 16px;
+  letter-spacing: -0.2px;
 }
 .pos-food-add-btn {
   width: 30px;
@@ -620,6 +595,7 @@ select option {
   cursor: pointer;
   transition: all 0.15s ease;
   padding: 0;
+  flex-shrink: 0;
 }
 .pos-food-add-btn:hover {
   background: var(--primary-glow);
@@ -1101,4 +1077,240 @@ select option {
   font-size: 11px; font-weight: 800; text-transform: uppercase;
   letter-spacing: 1.5px; color: var(--text-muted);
 }
-@media print { body * { visibility: hidden; } .receipt-modal, .receipt-modal * { visibility: visible; } .receipt-modal { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none !important; } .no-print { display: none !important; } }
+/* ── POS Billing / Receipt Modal System ─────────────────── */
+.pos-billing-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+.pos-billing-dialog {
+  background: #0d121f;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 440px;
+  max-height: 94vh;
+  max-height: 94dvh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  position: relative;
+}
+.pos-billing-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.03);
+  flex-shrink: 0;
+}
+.pos-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 10px #4ade80;
+  flex-shrink: 0;
+}
+.pos-billing-close-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pos-billing-close-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(1.05);
+}
+.pos-billing-actions-row {
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.25);
+}
+.pos-receipt-tabs {
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 4px;
+}
+.pos-receipt-tab-btn {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+.pos-receipt-tab-btn.active {
+  background: var(--primary-glow);
+  color: white;
+  box-shadow: 0 2px 8px rgba(255, 47, 146, 0.35);
+}
+.pos-billing-btn-group {
+  display: flex;
+  gap: 8px;
+}
+.pos-billing-btn-print {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+.pos-billing-btn-print:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.pos-billing-btn-next {
+  flex: 1.2;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--primary-glow) 0%, #ff5252 100%);
+  border: none;
+  color: white;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 4px 14px rgba(255, 47, 146, 0.35);
+  transition: all 0.15s ease;
+}
+.pos-billing-btn-next:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+.pos-billing-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 14px;
+  display: flex;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+.pos-thermal-slip {
+  width: 100%;
+  max-width: 360px;
+  background: #ffffff;
+  color: #000000;
+  font-family: 'JetBrains Mono', Courier, monospace;
+  padding: 18px 16px;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
+}
+.pos-billing-footer {
+  padding: 10px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0d121f;
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.pos-footer-btn-print {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.pos-footer-btn-next {
+  flex: 1.3;
+  padding: 12px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--primary-glow) 0%, #ff5252 100%);
+  border: none;
+  color: white;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 4px 16px rgba(255, 47, 146, 0.4);
+}
+
+@media (max-width: 640px) {
+  .pos-billing-dialog {
+    max-height: 96dvh;
+    border-radius: 16px;
+  }
+  .pos-thermal-slip {
+    padding: 14px 12px;
+  }
+}
+
+/* Print CSS */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .pos-thermal-slip,
+  .pos-thermal-slip * {
+    visibility: visible !important;
+  }
+  .pos-thermal-slip {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 80mm !important;
+    margin: 0 !important;
+    padding: 4px !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print,
+  .no-print-bg {
+    display: none !important;
+    background: transparent !important;
+  }
+}
