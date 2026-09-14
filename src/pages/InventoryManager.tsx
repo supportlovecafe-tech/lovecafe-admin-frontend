@@ -428,7 +428,8 @@ export default function InventoryManager({ user }: { user: any }) {
 
               {/* Stock Inventory Table */}
               <div className="glass-card" style={{ borderRadius: 20, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <div className="data-table-wrapper">
+                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
                       <th style={{ padding: '18px 24px', fontSize: 13, color: 'var(--text-muted)', fontWeight: 700 }}>Item Name</th>
@@ -526,6 +527,7 @@ export default function InventoryManager({ user }: { user: any }) {
                     )}
                   </tbody>
                 </table>
+              </div>
               </div>
             </div>
           )}
@@ -696,7 +698,8 @@ export default function InventoryManager({ user }: { user: any }) {
                 <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>Audit trail of additions, sales, and manual adjustments.</p>
               </div>
 
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <div className="data-table-wrapper">
+              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.01)' }}>
                     <th style={{ padding: '16px 24px', fontSize: 12, color: 'var(--text-muted)', fontWeight: 700 }}>Timestamp</th>
@@ -757,6 +760,7 @@ export default function InventoryManager({ user }: { user: any }) {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>

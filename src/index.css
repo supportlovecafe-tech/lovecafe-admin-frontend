@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
 
 /* ── Design Tokens ─────────────────────────────────── */
-:root {
+ :root {
   --primary-glow:   #FF2F92;
   --primary-dark:   #cc1a6e;
   --secondary-glow: #00D2FF;
@@ -32,6 +32,11 @@
   --radius-lg:      24px;
   --radius-xl:      32px;
 
+  /* Mobile tokens - additive, desktop unchanged */
+  --tap-min:        44px;
+  --input-h:        48px;
+  --safe-b:         env(safe-area-inset-bottom, 0px);
+
   /* Alias used by older components */
   --surface-container-lowest: var(--bg-dark);
   --primary-red:    var(--primary-glow);
@@ -44,7 +49,7 @@
   padding: 0;
 }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 
 body {
   font-family: var(--font-body);
@@ -54,9 +59,18 @@ body {
     radial-gradient(ellipse at 100% 100%, rgba(0,210,255,0.06) 0px, transparent 55%);
   color: var(--text-main);
   min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
+  overscroll-behavior-y: contain;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+* { -webkit-tap-highlight-color: transparent; }
+input, textarea, select { font-size: 16px; }
+@media (min-width: 1025px) {
+  input, textarea, select { font-size: 14px; }
+  .input-premium, .premium-input { font-size: 15px; }
 }
 
 h1, h2, h3, h4, h5 {
@@ -343,6 +357,7 @@ select option {
   display: flex;
   gap: 32px;
   height: calc(100vh - 80px);
+  height: calc(100dvh - 80px);
   overflow: hidden;
 }
 
@@ -351,8 +366,33 @@ select option {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 0;
 }
-
+.pos-header {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.pos-header h1 { font-size: clamp(22px, 5vw, 32px); line-height: 1.1; }
+.pos-search-wrap { position: relative; width: 250px; flex-shrink: 0; }
+.pos-categories-sidebar {
+  width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 16px;
+  padding-bottom: 20px;
+  flex-shrink: 0;
+}
+.pos-food-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
 .pos-cart {
   width: 420px;
   display: flex;
@@ -363,13 +403,22 @@ select option {
   overflow: hidden;
   position: relative;
   transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  flex-shrink: 0;
 }
+.pos-cart-handle { display: none; }
 
 .mobile-cart-toggle {
   display: none;
 }
+@media (max-width: 640px) {
+  .pos-search-wrap { width: 100% !important; }
+  .pos-food-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important; gap: 10px !important; }
+}
+@media (min-width: 641px) and (max-width: 768px) {
+  .pos-food-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important; }
+}
 
-/* ── Mobile Optimization ─────────────────────────────── */
+/* ── Mobile Optimization (additive — desktop unchanged) ─── */
 @media (max-width: 1024px) {
   :root {
     --sidebar-width: 0px;
@@ -493,7 +542,7 @@ select option {
   position: fixed;
   top: 20px;
   right: 20px;
-  z-index: 1100;
+  z-index: 1040;
   width: 44px;
   height: 44px;
   border-radius: 12px;
@@ -504,6 +553,7 @@ select option {
   color: white;
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   transition: all 0.2s ease;
+  touch-action: manipulation;
 }
 
 .sidebar-toggle-btn:hover {
@@ -515,10 +565,14 @@ select option {
 
 /* ── Modal / Overlay ───────────────────────────────── */
 .modal-overlay {
-  position: fixed; inset: 0; z-index: 200;
+  position: fixed; inset: 0; z-index: 9999;
   background: rgba(0,0,0,0.6);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: fadeIn 0.2s ease;
 }
 .modal-card {
@@ -528,10 +582,55 @@ select option {
   padding: 40px;
   width: 90%;
   max-width: 520px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   box-shadow: 0 32px 64px rgba(0,0,0,0.5);
   animation: slideUp 0.3s cubic-bezier(0.2,0.8,0.2,1);
 }
 
+/* ── Receipt / Bottom Sheet Mobile ─────────────────── */
+@media (max-width: 640px) {
+  .receipt-modal { max-width: 100% !important; width: 100% !important; border-radius: 20px 20px 0 0 !important; max-height: 92dvh !important; overflow-y: auto !important; }
+  .printable-area { flex-direction: column !important; padding: 16px !important; gap: 16px !important; }
+  .customize-sheet { border-radius: 20px 20px 0 0 !important; max-height: 92dvh !important; width: 100% !important; }
+  .customize-overlay { align-items: flex-end !important; padding: 0 !important; }
+}
+/* ── Aggressive inline-style overrides for mobile (preserve desktop) */
+@media (max-width: 1024px) {
+  header[style*="display: flex"] { flex-wrap: wrap !important; gap: 12px !important; }
+  div[style*="min-width: 300px"] { min-width: 240px !important; }
+  div[style*="min-width: 400px"] { min-width: 260px !important; }
+  div[style*="padding: 40px"], div[style*="padding:40px"] { padding: 16px !important; }
+  div[style*="padding: 32px"], div[style*="padding:32px"] { padding: 16px !important; }
+  /* Any element with fixed 380/360/350/450/400 panel widths */
+  div[style*="width: 380px"], div[style*="width: 360px"], div[style*="width: 350px"],
+  div[style*="width: 450px"], div[style*="width: 400px"],
+  div[style*="width:280px"], div[style*="width: 280px"] {
+    width: 92vw !important;
+    max-width: 92vw !important;
+  }
+  /* Flex rows with gap 32 that are main splits */
+  div[style*="gap: 32px"][style*="display: flex"] { flex-wrap: wrap !important; flex-direction: column !important; }
+  /* Height calc fixes */
+  div[style*="height: calc(100vh - 120px)"] { height: auto !important; min-height: 0 !important; }
+  div[style*="height: calc(100vh - 100px)"] { height: auto !important; min-height: 0 !important; }
+}
+@media (max-width: 1024px) {
+  div[style*="repeat(3, 1fr)"] { grid-template-columns: 1fr !important; }
+  div[style*="350px 1fr"] { grid-template-columns: 1fr !important; }
+  div[style*="1fr 180px"] { grid-template-columns: 1fr !important; }
+  div[style*="minmax(360px"] { grid-template-columns: 1fr !important; }
+  div[style*="minmax(300px"] { grid-template-columns: 1fr !important; }
+  div[style*="minmax(320px"] { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 640px) {
+  div[style*="repeat(4, 1fr)"] { grid-template-columns: 1fr !important; }
+}
+@media (min-width: 641px) and (max-width: 1024px) {
+  div[style*="repeat(4, 1fr)"] { grid-template-columns: repeat(2, 1fr) !important; }
+}
 /* ── Toggle Switch ─────────────────────────────────── */
 .toggle-switch { position: relative; display: inline-block; width: 48px; height: 26px; }
 .toggle-switch input { opacity: 0; width: 0; height: 0; }

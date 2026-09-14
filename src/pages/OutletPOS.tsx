@@ -447,6 +447,14 @@ export default function OutletPOS({ user }: { user: any }) {
 
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isMobile = window.matchMedia('(max-width: 1024px)').matches;
+    if (isMobile && isMobileCartOpen) document.body.style.overflow = 'hidden';
+    else if (isMobile) document.body.style.overflow = '';
+    return () => { document.body.style.overflow = ''; };
+  }, [isMobileCartOpen]);
+
   if (loading) {
       return (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -461,11 +469,11 @@ export default function OutletPOS({ user }: { user: any }) {
         
         {/* Left: Menu Catalog */}
         <div className="pos-main">
-            <header style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <header className="pos-header">
                 <div>
-                    <h1 style={{ fontSize: '32px', marginBottom: '8px' }}>Walk-in POS</h1>
+                    <h1 style={{ marginBottom: '8px' }}>Walk-in POS</h1>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <p style={{ color: 'var(--text-muted)', margin: 0 }}>Tap items to add to the customer's cart.</p>
+                        <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '13px' }}>Tap items to add to the customer's cart.</p>
                         {isOffline && (
                             <span style={{ background: 'rgba(244, 67, 54, 0.1)', color: '#F44336', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <Smartphone size={12} /> OFFLINE MODE
@@ -483,14 +491,14 @@ export default function OutletPOS({ user }: { user: any }) {
                         )}
                     </div>
                 </div>
-                <div style={{ position: 'relative', width: '250px' }}>
+                <div className="pos-search-wrap">
                     <input 
                         type="text" 
                         placeholder="Search menu..." 
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                         style={{ 
-                            width: '100%', padding: '10px 16px', background: 'rgba(255,255,255,0.05)', 
+                            width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.05)', 
                             border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white', outline: 'none' 
                         }}
                     />
@@ -498,17 +506,9 @@ export default function OutletPOS({ user }: { user: any }) {
             </header>
 
             {/* Content Area: Categories + Grid */}
-            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minWidth: 0 }}>
                 {/* Vertical Categories */}
-                <div className="pos-categories-sidebar" style={{ 
-                    width: '180px', 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    gap: '12px', 
-                    overflowY: 'auto', 
-                    paddingRight: '16px',
-                    paddingBottom: '20px'
-                }}>
+                <div className="pos-categories-sidebar">
                     {categories.map(cat => (
                         <button
                             key={cat}
@@ -535,8 +535,8 @@ export default function OutletPOS({ user }: { user: any }) {
                 </div>
 
                 {/* Food Grid */}
-                <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
+                <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px', minWidth: 0, WebkitOverflowScrolling: 'touch' as any }}>
+                    <div className="pos-food-grid">
                     {filteredFoods.map(food => (
                         <div 
                             key={food.id} 
@@ -567,8 +567,13 @@ export default function OutletPOS({ user }: { user: any }) {
             </div>
         </div>
 
+        {/* Cart Backdrop for mobile */}
+        {isMobileCartOpen && (
+          <div onClick={() => setIsMobileCartOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)', zIndex: 1015 } as any} />
+        )}
         {/* Right: Cart Sidebar */}
         <div className={`pos-cart ${isMobileCartOpen ? 'cart-open' : ''}`}>
+            <div className="pos-cart-handle" />
             <div style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <ShoppingCart size={20} color="var(--primary-glow)" /> Current Order
@@ -594,19 +599,19 @@ export default function OutletPOS({ user }: { user: any }) {
                             <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     {item.is_combo && <span style={{ fontSize: '9px', background: 'linear-gradient(90deg,#FF6B35,#FF2D55)', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>COMBO</span>}
-                                    <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{item.name}</div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{item.name}</div>
                                 </div>
                                 <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>₹{item.price} x {item.quantity}</div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <button onClick={() => updateQuantity(item.id, -1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '28px', height: '28px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <button onClick={() => updateQuantity(item.id, -1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '36px', height: '36px', minWidth: 36, borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <Minus size={14} />
                                 </button>
                                 <span style={{ fontWeight: 'bold', width: '20px', textAlign: 'center' }}>{item.quantity}</span>
-                                <button onClick={() => updateQuantity(item.id, 1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '28px', height: '28px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <button onClick={() => updateQuantity(item.id, 1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '36px', height: '36px', minWidth: 36, borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <Plus size={14} />
                                 </button>
-                                <button onClick={() => removeFromCart(item.id)} style={{ background: 'rgba(255,71,87,0.1)', border: 'none', color: '#ff4757', width: '28px', height: '28px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: '4px' }}>
+                                <button onClick={() => removeFromCart(item.id)} style={{ background: 'rgba(255,71,87,0.1)', border: 'none', color: '#ff4757', width: '36px', height: '36px', minWidth: 36, borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: '4px' }}>
                                     <Trash2 size={14} />
                                 </button>
                             </div>
@@ -640,7 +645,7 @@ export default function OutletPOS({ user }: { user: any }) {
                                 placeholder="e.g. 9876543210" 
                                 value={customerPhone}
                                 onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))}
-                                style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '14px' }}
+                                style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '16px' }}
                             />
                         </div>
                     </div>
@@ -655,7 +660,7 @@ export default function OutletPOS({ user }: { user: any }) {
                                 placeholder="e.g. Screen 1" 
                                 value={screenNumber}
                                 onChange={e => setScreenNumber(e.target.value)}
-                                style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '14px' }}
+                                style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '16px' }}
                             />
                         </div>
                         <div style={{ flex: 1 }}>
@@ -668,7 +673,7 @@ export default function OutletPOS({ user }: { user: any }) {
                                 placeholder="e.g. F9" 
                                 value={seatNumber}
                                 onChange={e => setSeatNumber(e.target.value)}
-                                style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '14px' }}
+                                style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '16px' }}
                             />
                         </div>
                     </div>
@@ -701,7 +706,7 @@ export default function OutletPOS({ user }: { user: any }) {
                                     placeholder="e.g. 500" 
                                     value={collectedCash}
                                     onChange={e => setCollectedCash(e.target.value)}
-                                    style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '14px' }}
+                                    style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'white', fontSize: '16px' }}
                                 />
                             </div>
                             <div style={{ flex: 1 }}>

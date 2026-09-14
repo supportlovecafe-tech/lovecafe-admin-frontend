@@ -1,9 +1,32 @@
-import {  useState } from 'react';
+import {  useState, useEffect } from 'react';
 import { navigate } from '../lib/router';
 import { LogOut, Home, Users, PieChart, Film, Coffee, Settings, Bell, KeyRound, History, Menu, X, Store, Package, Activity, Percent, Monitor, Archive } from 'lucide-react';
 
 export default function Layout({ user, onLogout, currentTab, children }) {
-  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(min-width: 1025px)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 1025px)');
+    const handler = (e) => {
+      if (e.matches) setSidebarOpen(true);
+      else setSidebarOpen(false);
+    };
+    setSidebarOpen(mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isMobile = !window.matchMedia('(min-width: 1025px)').matches;
+    if (isMobile && sidebarOpen) document.body.style.overflow = 'hidden';
+    else document.body.style.overflow = '';
+    return () => { document.body.style.overflow = ''; };
+  }, [sidebarOpen]);
   
   if (!user) return children;
 
@@ -12,7 +35,7 @@ export default function Layout({ user, onLogout, currentTab, children }) {
   return (
     <div className="app-layout" style={{ display: 'flex', minHeight: '100vh' }}>
       {/* Sidebar Toggle Button */}
-      <button className="sidebar-toggle-btn" onClick={toggleSidebar}>
+      <button className="sidebar-toggle-btn" onClick={toggleSidebar} aria-label={sidebarOpen ? 'Close menu' : 'Open menu'} aria-expanded={sidebarOpen}>
         {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
       </button>
 
