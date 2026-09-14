@@ -214,7 +214,7 @@ export default function AddonManager({ user }) {
   const badgeStyle = (color: string) => ({ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: `${color}22`, color, border: `1px solid ${color}44`, letterSpacing: 0.3 });
 
   return (
-    <div style={{ display: 'flex', gap: 20, height: 'calc(100vh - 100px)', padding: '0 4px' }}>
+    <div className="addon-manager-root" style={{ display: 'flex', gap: 20, height: 'calc(100vh - 100px)', padding: '0 4px' }}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       {/* LEFT: Groups List */}
@@ -276,7 +276,8 @@ export default function AddonManager({ user }) {
                 <button onClick={() => handleDeleteGroup(selectedGroupId)} style={{ ...btnGhost, color: '#ef4444' }}><Trash2 size={14} /></button>
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+            <div className="data-table-wrapper" style={{ marginBottom: 4 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, minWidth: 700 }}>
               <div><label style={labelStyle}>Internal Name</label><input value={editingGroup.name} onChange={e => setEditingGroup(p => ({ ...p, name: e.target.value }))} style={inputStyle} /></div>
               <div><label style={labelStyle}>Display Name</label><input value={editingGroup.display_name} onChange={e => setEditingGroup(p => ({ ...p, display_name: e.target.value }))} style={inputStyle} /></div>
               <div><label style={labelStyle}>Selection Type</label>
@@ -297,6 +298,7 @@ export default function AddonManager({ user }) {
                   <div><label style={labelStyle}>Max Selections</label><input type="number" min={1} value={editingGroup.max_selection ?? ''} placeholder="Unlimited" onChange={e => setEditingGroup(p => ({ ...p, max_selection: e.target.value || null }))} style={inputStyle} /></div>
                 </>
               )}
+            </div>
             </div>
           </div>
 

@@ -613,6 +613,9 @@ select option {
   }
   /* Flex rows with gap 32 that are main splits */
   div[style*="gap: 32px"][style*="display: flex"] { flex-wrap: wrap !important; flex-direction: column !important; }
+  /* AddonManager outer flex with gap 20 */
+  .addon-manager-root { flex-direction: column !important; height: auto !important; min-height: 0 !important; }
+  .addon-manager-root > .glass-card { width: 100% !important; max-width: 100% !important; }
   /* Height calc fixes */
   div[style*="height: calc(100vh - 120px)"] { height: auto !important; min-height: 0 !important; }
   div[style*="height: calc(100vh - 100px)"] { height: auto !important; min-height: 0 !important; }
@@ -625,11 +628,16 @@ select option {
   div[style*="minmax(300px"] { grid-template-columns: 1fr !important; }
   div[style*="minmax(320px"] { grid-template-columns: 1fr !important; }
 }
+/* AddonManager horizontal scroll exception - keep 4 cols and scroll */
+@media (max-width: 1024px) {
+  .addon-manager-root [style*="repeat(4, 1fr)"] { grid-template-columns: repeat(4, 1fr) !important; min-width: 700px; }
+  .addon-manager-root .data-table-wrapper { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+}
 @media (max-width: 640px) {
-  div[style*="repeat(4, 1fr)"] { grid-template-columns: 1fr !important; }
+  div[style*="repeat(4, 1fr)"]:not(.addon-manager-root [style*="repeat(4, 1fr)"]) { grid-template-columns: 1fr !important; }
 }
 @media (min-width: 641px) and (max-width: 1024px) {
-  div[style*="repeat(4, 1fr)"] { grid-template-columns: repeat(2, 1fr) !important; }
+  div[style*="repeat(4, 1fr)"]:not(.addon-manager-root [style*="repeat(4, 1fr)"]) { grid-template-columns: repeat(2, 1fr) !important; }
 }
 /* ── Toggle Switch ─────────────────────────────────── */
 .toggle-switch { position: relative; display: inline-block; width: 48px; height: 26px; }
