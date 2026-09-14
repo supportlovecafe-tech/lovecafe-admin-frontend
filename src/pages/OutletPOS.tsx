@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
-import { ShoppingCart, Plus, Minus, Trash2, Printer, CheckCircle, Store, Loader2, RefreshCcw, Smartphone, CreditCard, Banknote, X } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, Printer, CheckCircle, Store, Loader2, RefreshCcw, Smartphone, CreditCard, Banknote, X, Search, ArrowRight } from 'lucide-react';
 
 export default function OutletPOS({ user }: { user: any }) {
   const [foods, setFoods] = useState<any[]>([]);
@@ -598,42 +598,34 @@ export default function OutletPOS({ user }: { user: any }) {
                     </div>
                 </div>
                 <div className="pos-search-wrap">
+                    <Search size={18} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)', pointerEvents: 'none', zIndex: 1 }} />
                     <input 
                         type="text" 
-                        placeholder="Search menu..." 
+                        placeholder="Search menu items..." 
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
-                        style={{ 
-                            width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.05)', 
-                            border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white', outline: 'none' 
-                        }}
+                        className="pos-search-input"
                     />
+                    {searchTerm && (
+                        <button 
+                            onClick={() => setSearchTerm('')} 
+                            style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: 4 }}
+                        >
+                            <X size={16} />
+                        </button>
+                    )}
                 </div>
             </header>
 
             {/* Content Area: Categories + Grid */}
             <div className="pos-content-area" style={{ minWidth: 0 }}>
-                {/* Vertical Categories (horizontal on mobile) */}
+                {/* Categories Bar */}
                 <div className="pos-categories-sidebar">
                     {categories.map(cat => (
                         <button
                             key={cat}
                             onClick={() => setActiveCategory(cat)}
-                            style={{
-                                padding: '14px 16px',
-                                borderRadius: '16px',
-                                background: activeCategory === cat ? 'var(--primary-glow)' : 'rgba(255,255,255,0.03)',
-                                color: activeCategory === cat ? 'white' : 'var(--text-muted)',
-                                border: '1px solid',
-                                borderColor: activeCategory === cat ? 'rgba(255,47,146,0.3)' : 'var(--glass-border)',
-                                cursor: 'pointer',
-                                fontWeight: 'bold',
-                                fontSize: '13px',
-                                textAlign: 'left',
-                                transition: 'all 0.2s'
-                            }}
-                            onMouseEnter={e => { if (activeCategory !== cat) { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; } }}
-                            onMouseLeave={e => { if (activeCategory !== cat) { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; } }}
+                            className={`pos-category-btn ${activeCategory === cat ? 'active' : ''}`}
                         >
                             {cat}
                         </button>
@@ -641,51 +633,54 @@ export default function OutletPOS({ user }: { user: any }) {
                 </div>
 
                 {/* Food Grid */}
-                <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px', minWidth: 0, WebkitOverflowScrolling: 'touch' as any }}>
+                <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', minWidth: 0, WebkitOverflowScrolling: 'touch' as any }}>
                     <div className="pos-food-grid">
                     {filteredFoods.map(food => {
                         const addons = getItemAddons(food);
                         const hasAddons = addons.length > 0;
+                        const inCartQty = cart.filter(i => (i.food_id || i.id) === food.id).reduce((s, i) => s + i.quantity, 0);
                         return (
                             <div 
                                 key={food.id} 
                                 onClick={() => handleItemClick(food)}
-                                className="glass-card" 
-                                style={{ 
-                                    padding: '16px 12px', 
-                                    cursor: 'pointer', 
-                                    transition: 'transform 0.1s',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '6px',
-                                    justifyContent: 'center',
-                                    alignItems: 'center',
-                                    textAlign: 'center',
-                                    minHeight: '90px',
-                                    position: 'relative'
-                                }}
-                                onMouseDown={e => e.currentTarget.style.transform = 'scale(0.96)'}
-                                onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-                                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                                className={`pos-food-card ${inCartQty > 0 ? 'in-cart' : ''}`}
                             >
-                                {hasAddons && (
-                                    <span style={{
-                                        position: 'absolute',
-                                        top: '6px',
-                                        right: '6px',
-                                        fontSize: '9px',
-                                        background: 'rgba(255,47,146,0.15)',
-                                        color: 'var(--primary-glow)',
-                                        border: '1px solid rgba(255,47,146,0.3)',
-                                        padding: '1px 5px',
-                                        borderRadius: '6px',
-                                        fontWeight: 'bold'
-                                    }}>
-                                        CUSTOMIZABLE
-                                    </span>
-                                )}
-                                <div style={{ fontWeight: 'bold', fontSize: '14px', lineHeight: '1.2' }}>{food.name}</div>
-                                <div style={{ color: 'var(--accent-gold)', fontWeight: '900', fontSize: '17px' }}>₹{food.price}</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '6px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <div style={{
+                                            width: 14, height: 14, border: `1.5px solid ${food.is_veg !== false ? '#4ade80' : '#f87171'}`,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '3px', flexShrink: 0
+                                        }}>
+                                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: food.is_veg !== false ? '#4ade80' : '#f87171' }} />
+                                        </div>
+                                        {inCartQty > 0 && (
+                                            <span style={{ fontSize: '11px', background: 'var(--primary-glow)', color: 'white', padding: '1px 6px', borderRadius: '6px', fontWeight: 800 }}>
+                                                {inCartQty} in cart
+                                            </span>
+                                        )}
+                                    </div>
+                                    {hasAddons && (
+                                        <span style={{
+                                            fontSize: '10px',
+                                            background: 'rgba(255,47,146,0.18)',
+                                            color: 'var(--primary-glow)',
+                                            border: '1px solid rgba(255,47,146,0.35)',
+                                            padding: '2px 7px',
+                                            borderRadius: '6px',
+                                            fontWeight: 800,
+                                            letterSpacing: '0.3px'
+                                        }}>
+                                            CUSTOMIZE
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="pos-food-name">{food.name}</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginTop: 'auto' }}>
+                                    <div className="pos-food-price">₹{food.price}</div>
+                                    <div className="pos-food-add-btn">
+                                        <Plus size={16} strokeWidth={3} />
+                                    </div>
+                                </div>
                             </div>
                         );
                     })}
@@ -1201,13 +1196,43 @@ export default function OutletPOS({ user }: { user: any }) {
             </div>
         )}
 
-        <button 
-          className="mobile-cart-toggle" 
-          onClick={() => setIsMobileCartOpen(!isMobileCartOpen)}
-        >
-          <ShoppingCart size={24} />
-          {cart.length > 0 && <div className="badge">{cart.length}</div>}
-        </button>
+        {/* Mobile Floating Order Bar (When cart has items) */}
+        {cart.length > 0 && (
+          <div 
+            className="pos-mobile-cart-bar"
+            onClick={() => setIsMobileCartOpen(true)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="pos-cart-bar-badge">
+                <ShoppingCart size={18} />
+                <span>{cart.reduce((s, i) => s + i.quantity, 0)}</span>
+              </div>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: 'white', lineHeight: '1.2' }}>
+                  {cart.length} {cart.length === 1 ? 'item' : 'items'} in order
+                </div>
+                <div style={{ fontSize: '13px', color: 'var(--accent-gold)', fontWeight: 800 }}>
+                  ₹{total.toFixed(2)}
+                </div>
+              </div>
+            </div>
+            <div className="pos-cart-bar-action">
+              <span>VIEW ORDER</span>
+              <ArrowRight size={16} />
+            </div>
+          </div>
+        )}
+
+        {/* Circular Floating Cart Button (when cart is empty or on tablet) */}
+        {cart.length === 0 && (
+          <button 
+            className="mobile-cart-toggle" 
+            onClick={() => setIsMobileCartOpen(!isMobileCartOpen)}
+            aria-label="Open cart"
+          >
+            <ShoppingCart size={24} />
+          </button>
+        )}
     </div>
     </>
   );
