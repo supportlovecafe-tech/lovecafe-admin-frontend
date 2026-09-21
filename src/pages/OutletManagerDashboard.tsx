@@ -844,7 +844,11 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
           minWidth: 0,
           flexShrink: 1
         }}>
-          {order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
+          {order.payment_method === 'POS_SPLIT' 
+            ? (order.metadata?.split_cash !== undefined 
+                ? `SPLIT (₹${order.metadata.split_cash} Cash + ₹${order.metadata.split_upi} UPI)`
+                : 'SPLIT (CASH + UPI)')
+            : order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
         </div>
         <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
           <button 

@@ -398,8 +398,17 @@ export default function OrderHistory({ user }) {
                     </td>
                     <td>
                       <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--accent-gold)' }}>
-                        {order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
+                        {order.payment_method === 'POS_SPLIT' ? 'SPLIT (CASH + UPI)' : order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
                       </span>
+                      {order.payment_method === 'POS_SPLIT' && order.metadata && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <div>💵 Cash: ₹{order.metadata.split_cash ?? 0}</div>
+                          <div>📱 UPI: ₹{order.metadata.split_upi ?? 0}</div>
+                          {order.collected_cash > (order.metadata?.split_cash || 0) && (
+                            <div style={{ color: '#4ade80' }}>Ret: ₹{order.return_cash}</div>
+                          )}
+                        </div>
+                      )}
                       {order.payment_method === 'POS_CASH' && order.collected_cash > 0 && (
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
                           <div>Coll: ₹{order.collected_cash}</div>
@@ -465,7 +474,7 @@ export default function OrderHistory({ user }) {
                 <div className="oh-card-footer">
                   <div className="oh-card-meta">
                     <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--accent-gold)' }}>
-                      {order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
+                      {order.payment_method === 'POS_SPLIT' ? 'SPLIT (CASH + UPI)' : order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
                     </span>
                     <span className="badge" style={{ background: `${sc}15`, color: sc, border: `1px solid ${sc}30` }}>
                       {order.status}
@@ -473,6 +482,16 @@ export default function OrderHistory({ user }) {
                   </div>
                   <div className="oh-card-time"><Clock size={11} /> {date}</div>
                 </div>
+
+                {order.payment_method === 'POS_SPLIT' && order.metadata && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '11px', color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
+                    <span>💵 Cash: ₹{order.metadata.split_cash ?? 0}</span>
+                    <span>📱 UPI: ₹{order.metadata.split_upi ?? 0}</span>
+                    {order.collected_cash > (order.metadata?.split_cash || 0) && (
+                      <span style={{ color: '#4ade80' }}>Change Ret: ₹{order.return_cash}</span>
+                    )}
+                  </div>
+                )}
 
                 {order.payment_method === 'POS_CASH' && order.collected_cash > 0 && (
                   <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
