@@ -17,6 +17,7 @@ import OffersManager from './pages/OffersManager'
 import KDSConfig from './pages/KDSConfig'
 import InventoryManager from './pages/InventoryManager'
 import AddonManager from './pages/AddonManager'
+import StaffBonusDashboard from './pages/StaffBonusDashboard'
 import './App.css'
 
 function App() {
@@ -78,11 +79,12 @@ function AuthenticatedApp({ user, onLogout }) {
 function TabRenderer({ role, user, currentTab }) {
   if (role === 'SUPER_ADMIN') {
     switch (currentTab) {
-      case 'dashboard':  return <SuperAdminDashboard user={user} />
-      case 'outlets':    return <OutletsManager user={user} />
-      case 'staff':      return <StaffManager user={user} />
-      case 'health':     return <SystemHealth />
-      default:           return <OutletsManager user={user} />
+      case 'dashboard':      return <SuperAdminDashboard user={user} />
+      case 'outlets':        return <OutletsManager user={user} />
+      case 'staff':          return <StaffManager user={user} />
+      case 'staff-bonuses':  return <StaffBonusDashboard user={user} />
+      case 'health':         return <SystemHealth />
+      default:               return <OutletsManager user={user} />
     }
   }
 

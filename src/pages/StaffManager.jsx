@@ -11,6 +11,7 @@ export default function StaffManager() {
   
   const [formData, setFormData] = useState({ 
     name: '', 
+    employeeCode: '',
     email: '',
     pin: '', 
     role: 'OUTLET_MANAGER', 
@@ -48,13 +49,14 @@ export default function StaffManager() {
 
   const resetForm = () => {
     setEditingStaff(null);
-    setFormData({ name: '', email: '', pin: '', role: 'OUTLET_MANAGER', cinemaId: '', permissions: ['orders', 'menu', 'history', 'sales'] });
+    setFormData({ name: '', employeeCode: '', email: '', pin: '', role: 'OUTLET_MANAGER', cinemaId: '', permissions: ['orders', 'menu', 'history', 'sales'] });
   };
 
   const handleEditStaff = (staff) => {
     setEditingStaff(staff.id);
     setFormData({
       name: staff.full_name || '',
+      employeeCode: staff.employee_code || '',
       email: staff.email || '',
       pin: staff.pin || '',
       role: staff.role || 'OUTLET_MANAGER',
@@ -87,6 +89,7 @@ export default function StaffManager() {
 
     const payload = {
       full_name: formData.name,
+      employee_code: formData.employeeCode ? formData.employeeCode.trim().toUpperCase() : null,
       email: formData.email ? formData.email.trim() : null,
       pin: formData.pin,
       role: formData.role,
@@ -182,6 +185,7 @@ export default function StaffManager() {
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                           <tr style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.25)' }}>
+                            <th style={{ padding: '12px 24px', textAlign: 'left' }}>Staff Code</th>
                             <th style={{ padding: '12px 24px', textAlign: 'left' }}>Name</th>
                             <th style={{ padding: '12px 24px', textAlign: 'left' }}>Email</th>
                             <th style={{ padding: '12px 24px', textAlign: 'left' }}>Role</th>
@@ -193,6 +197,21 @@ export default function StaffManager() {
                         <tbody>
                           {staff.map(s => (
                             <tr key={s.id} style={{ borderTop: '1px solid rgba(255,255,255,0.03)' }}>
+                              <td style={{ padding: '14px 24px' }}>
+                                <span style={{
+                                  fontFamily: 'monospace',
+                                  fontWeight: '800',
+                                  padding: '4px 10px',
+                                  borderRadius: '6px',
+                                  background: 'rgba(0, 210, 255, 0.1)',
+                                  color: 'var(--secondary-glow)',
+                                  border: '1px solid rgba(0, 210, 255, 0.25)',
+                                  fontSize: '11px',
+                                  letterSpacing: '1px'
+                                }}>
+                                  {s.employee_code || ('EMP-' + s.id.substring(0,6).toUpperCase())}
+                                </span>
+                              </td>
                               <td style={{ padding: '14px 24px', fontWeight: '700', fontSize: '14px' }}>{s.full_name || 'Unnamed'}</td>
                               <td style={{ padding: '14px 24px', color: 'var(--text-secondary)' }}>{s.email || '—'}</td>
                               <td style={{ padding: '14px 24px' }}>
@@ -261,6 +280,11 @@ export default function StaffManager() {
               <div className="input-group">
                 <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Full Name</label>
                 <input className="input-premium" placeholder="Staff Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+              </div>
+
+              <div className="input-group">
+                <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Employee / Staff Code (e.g. EMP-001)</label>
+                <input className="input-premium" placeholder="e.g. EMP-001" value={formData.employeeCode} onChange={e => setFormData({...formData, employeeCode: e.target.value.toUpperCase()})} style={{ textTransform: 'uppercase', fontFamily: 'monospace', letterSpacing: '1px', fontWeight: 'bold' }} />
               </div>
 
               <div className="input-group">

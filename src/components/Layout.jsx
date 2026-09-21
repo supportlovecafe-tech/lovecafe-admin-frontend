@@ -1,6 +1,6 @@
 import {  useState, useEffect } from 'react';
 import { navigate } from '../lib/router';
-import { LogOut, Home, Users, PieChart, Film, Coffee, Settings, Bell, KeyRound, History, Menu, X, Store, Package, Activity, Percent, Monitor, Archive, Sliders } from 'lucide-react';
+import { LogOut, Home, Users, PieChart, Film, Coffee, Settings, Bell, KeyRound, History, Menu, X, Store, Package, Activity, Percent, Monitor, Archive, Sliders, Award } from 'lucide-react';
 
 export default function Layout({ user, onLogout, currentTab, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -54,7 +54,7 @@ export default function Layout({ user, onLogout, currentTab, children }) {
       <aside className={`glass-card floating-sidebar ${sidebarOpen ? 'active' : ''}`} style={{ 
         width: 'var(--sidebar-width)', height: 'calc(100vh - 40px)', margin: '20px 0 20px 20px',
         padding: '32px 20px', display: 'flex', flexDirection: 'column', position: 'fixed',
-        top: 0, zIndex: 1000, borderRadius: 28
+        top: 0, zIndex: 1000, borderRadius: 28, overflow: 'hidden'
       }}>
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 40, padding: '0 8px' }}>
@@ -72,10 +72,11 @@ export default function Layout({ user, onLogout, currentTab, children }) {
           {user.role === 'SUPER_ADMIN' ? (
             <>
               <SectionLabel>Global Management</SectionLabel>
-              <NavItem icon={<Film size={20} />}   label="Outlets"       tabId="outlets"    currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<Activity size={20} />} label="System Health" tabId="health"      currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<KeyRound size={20} />}   label="Credentials"   tabId="staff"      currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<Settings size={20} />}   label="Platform Fees" tabId="dashboard"  currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<Film size={20} />}    label="Outlets"         tabId="outlets"        currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<Award size={20} />}   label="Staff & Bonuses" tabId="staff-bonuses"  currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<KeyRound size={20} />} label="Staff Access"    tabId="staff"          currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<Settings size={20} />} label="Platform Fees"  tabId="dashboard"      currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              <NavItem icon={<Activity size={20} />} label="System Health"  tabId="health"         currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
             </>
           ) : (
             <>
@@ -117,7 +118,7 @@ export default function Layout({ user, onLogout, currentTab, children }) {
         </nav>
 
         {/* User Card + Logout */}
-        <div style={{ marginTop: 'auto', paddingTop: 24 }}>
+        <div style={{ marginTop: 'auto', paddingTop: 16, flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <div style={{ 
             display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
             padding: '14px 16px', background: 'rgba(255,255,255,0.03)', 

@@ -1,6 +1,6 @@
 import {  useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ShoppingBag, Search, Calendar, Filter, ChevronLeft, ChevronRight, Clock, Download, X, ListFilter } from 'lucide-react';
+import { ShoppingBag, Search, Calendar, ChevronLeft, ChevronRight, Clock, Download, X, ListFilter } from 'lucide-react';
 
 export default function OrderHistory({ user }) {
   const [orders, setOrders] = useState([]);
@@ -26,7 +26,7 @@ export default function OrderHistory({ user }) {
 
   const fetchOrders = async () => {
     setLoading(true);
-    let query = supabase.from('orders').select('*', { count: 'exact' });
+    let query = supabase.from('orders').select('*, profiles:staff_id(full_name, employee_code, role)', { count: 'exact' });
     
     if (user.cinema_id && user.cinema_id !== 'default') {
         query = query.eq('cinema_id', user.cinema_id);
@@ -57,7 +57,7 @@ export default function OrderHistory({ user }) {
   };
 
   const downloadFullTransactionReport = async () => {
-    let query = supabase.from('orders').select('timestamp, display_id, location, total_amount, payment_method, status, items, metadata, collected_cash, return_cash');
+    let query = supabase.from('orders').select('timestamp, display_id, location, total_amount, payment_method, status, items, metadata, collected_cash, return_cash, staff_id, profiles:staff_id(full_name, employee_code, role)');
     
     if (user.cinema_id && user.cinema_id !== 'default') {
         query = query.eq('cinema_id', user.cinema_id);
@@ -71,12 +71,15 @@ export default function OrderHistory({ user }) {
     if (error) { alert('Error generating report'); return; }
     if (!data || data.length === 0) { alert('No records found for the selected range'); return; }
 
-    const headers = ['Date', 'Time', 'Order ID', 'Location', 'Amount', 'Payment', 'Status', 'Items', 'Staff Email', 'Collected Cash', 'Return Cash'];
+    const headers = ['Date', 'Time', 'Order ID', 'Location', 'Amount', 'Payment', 'Status', 'Items', 'Staff Code', 'Staff Name', 'Collected Cash', 'Return Cash'];
     const rows = data.map(o => {
         const d = new Date(o.timestamp);
         const items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
         const itemsList = items.map(i => `${i.quantity}x ${i.food_name || i.name}`).join('; ');
         
+        const staffCode = o.profiles?.employee_code || o.metadata?.staff_code || (o.staff_id ? 'EMP-' + o.staff_id.substring(0,6).toUpperCase() : 'N/A');
+        const staffName = o.profiles?.full_name || o.metadata?.staff_name || (o.metadata?.staff_email ? o.metadata.staff_email : 'Online / App');
+
         return [
             d.toLocaleDateString(),
             d.toLocaleTimeString(),
@@ -86,7 +89,8 @@ export default function OrderHistory({ user }) {
             o.payment_method,
             o.status,
             itemsList,
-            o.metadata?.staff_email || 'N/A',
+            staffCode,
+            staffName,
             o.collected_cash || 0,
             o.return_cash || 0
         ];
@@ -112,184 +116,384 @@ export default function OrderHistory({ user }) {
   };
 
   return (
-    <div className="animate-lucrative" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ fontSize: '32px', marginBottom: '8px' }}>Order History</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Browse and search past orders for {cinemaName || 'this outlet'}.</p>
+    <div className="animate-lucrative" style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
+      <style>{`
+        .oh-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          padding-right: 52px;
+          box-sizing: border-box;
+          flex-wrap: wrap;
+        }
+        .oh-download-btn {
+          flex-shrink: 0;
+        }
+        .oh-filter-card {
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .oh-search-row {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .oh-search-wrap {
+          flex: 2;
+          min-width: 0;
+          position: relative;
+        }
+        .oh-status-wrap {
+          flex: 1;
+          min-width: 120px;
+        }
+        .oh-date-row {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          flex-wrap: wrap;
+          border-top: 1px solid rgba(255,255,255,0.06);
+          padding-top: 14px;
+        }
+        .oh-date-label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          color: var(--text-muted);
+          font-size: 12px;
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+        .oh-date-inputs {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex: 1;
+          min-width: 0;
+          flex-wrap: wrap;
+        }
+        .oh-date-inputs input {
+          flex: 1;
+          min-width: 120px;
+        }
+        .oh-apply-btn {
+          flex-shrink: 0;
+        }
+
+        /* Orders list - card mode on mobile, table on desktop */
+        .oh-table-wrap {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          border-radius: 12px;
+        }
+        .oh-order-cards {
+          display: none;
+        }
+
+        @media (max-width: 768px) {
+          .oh-header h1 { font-size: clamp(20px, 6vw, 28px); }
+          .oh-download-btn span { display: none; }
+          .oh-download-btn { padding: 10px 14px !important; }
+          .oh-table-wrap { display: none; }
+          .oh-order-cards { display: flex; flex-direction: column; gap: 12px; }
+          .oh-date-inputs { flex-direction: column; align-items: stretch; }
+          .oh-date-inputs input { min-width: 0; width: 100%; }
+        }
+
+        .oh-order-card {
+          background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 16px;
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .oh-card-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 8px;
+        }
+        .oh-card-location {
+          font-weight: 800;
+          font-size: 15px;
+          line-height: 1.3;
+          flex: 1;
+          min-width: 0;
+        }
+        .oh-card-amount {
+          font-weight: 900;
+          font-size: 18px;
+          color: var(--accent-gold);
+          flex-shrink: 0;
+        }
+        .oh-card-meta {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .oh-card-id {
+          font-size: 11px;
+          color: var(--text-muted);
+          font-family: var(--font-mono);
+        }
+        .oh-card-items {
+          background: rgba(0,0,0,0.2);
+          border-radius: 10px;
+          padding: 10px 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .oh-card-item-row {
+          font-size: 13px;
+          color: var(--text-main);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .oh-card-footer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .oh-card-time {
+          font-size: 11px;
+          color: var(--text-muted);
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .oh-pagination {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 16px 0 4px;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+      `}</style>
+
+      {/* Header */}
+      <header className="oh-header">
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontSize: 'clamp(22px, 6vw, 32px)', marginBottom: '6px' }}>Order History</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Browse and search past orders for {cinemaName || 'this outlet'}.</p>
         </div>
-        <button onClick={downloadFullTransactionReport} className="btn-lucrative" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px' }}>
-            <Download size={18} /> Download Full Transaction Report
+        <button onClick={downloadFullTransactionReport} className="btn-lucrative oh-download-btn" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', flexShrink: 0 }}>
+          <Download size={18} />
+          <span>Download Report</span>
         </button>
       </header>
 
-      {/* Direct Filter Bar */}
-      <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ flex: 2, position: 'relative', minWidth: '300px' }}>
-                <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input 
-                    className="input-premium" 
-                    placeholder="Search by seat or order ID..." 
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && fetchOrders()}
-                    style={{ paddingLeft: '48px' }}
-                />
-            </div>
-
-            <div style={{ flex: 1, minWidth: '160px' }}>
-                <select 
-                    className="input-premium" 
-                    value={statusFilter}
-                    onChange={e => { setStatusFilter(e.target.value); setPage(0); }}
-                    style={{ appearance: 'none' }}
-                >
-                    <option value="ALL">All Statuses</option>
-                    <option value="PENDING">New</option>
-                    <option value="PREPARING">Preparing</option>
-                    <option value="READY">Ready</option>
-                    <option value="DELIVERED">Delivered</option>
-                    <option value="CANCELLED">Cancelled</option>
-                </select>
-            </div>
+      {/* Filter Bar */}
+      <div className="glass-card oh-filter-card">
+        {/* Search + Status */}
+        <div className="oh-search-row">
+          <div className="oh-search-wrap">
+            <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <input
+              className="input-premium"
+              placeholder="Search by seat or order ID..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && fetchOrders()}
+              style={{ paddingLeft: '42px', width: '100%', boxSizing: 'border-box' }}
+            />
+          </div>
+          <div className="oh-status-wrap">
+            <select
+              className="input-premium"
+              value={statusFilter}
+              onChange={e => { setStatusFilter(e.target.value); setPage(0); }}
+              style={{ appearance: 'none', width: '100%', boxSizing: 'border-box' }}
+            >
+              <option value="ALL">All Statuses</option>
+              <option value="PENDING">New</option>
+              <option value="PREPARING">Preparing</option>
+              <option value="READY">Ready</option>
+              <option value="DELIVERED">Delivered</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '20px', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '20px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '400px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                    <Calendar size={16} /> Date Range:
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-premium" style={{ flex: 1, fontSize: '13px' }} />
-                    <span style={{ color: 'var(--text-muted)' }}>to</span>
-                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-premium" style={{ flex: 1, fontSize: '13px' }} />
-                    {(startDate || endDate) && (
-                        <button onClick={() => { setStartDate(''); setEndDate(''); }} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', padding: '4px' }}>
-                            <X size={16} />
-                        </button>
-                    )}
-                </div>
-            </div>
-            
-            <button onClick={fetchOrders} className="btn-lucrative" style={{ padding: '0 24px', height: '44px' }}>
-                <ListFilter size={18} /> Apply Filters
-            </button>
+        {/* Date Range */}
+        <div className="oh-date-row">
+          <div className="oh-date-label">
+            <Calendar size={14} /> Date Range:
+          </div>
+          <div className="oh-date-inputs">
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-premium" style={{ fontSize: '13px', boxSizing: 'border-box' }} />
+            <span style={{ color: 'var(--text-muted)', fontSize: '12px', flexShrink: 0 }}>to</span>
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-premium" style={{ fontSize: '13px', boxSizing: 'border-box' }} />
+            {(startDate || endDate) && (
+              <button onClick={() => { setStartDate(''); setEndDate(''); }} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', padding: '4px', flexShrink: 0 }}>
+                <X size={16} />
+              </button>
+            )}
+          </div>
+          <button onClick={fetchOrders} className="btn-lucrative oh-apply-btn" style={{ padding: '0 20px', height: '44px' }}>
+            <ListFilter size={16} /> Apply
+          </button>
         </div>
       </div>
 
-      {/* Results Table */}
-      <div className="glass-card" style={{ padding: '24px', borderRadius: '16px' }}>
-        <div className="data-table-wrapper">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Order Info</th>
-              <th>Items</th>
-              <th>Payment</th>
-              <th>Amount</th>
-              <th>Status</th>
-              <th>Timestamp</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
+      {/* Results */}
+      <div className="glass-card" style={{ padding: '16px', borderRadius: '16px', overflowX: 'hidden' }}>
+        {/* Desktop Table */}
+        <div className="oh-table-wrap">
+          <table className="data-table" style={{ minWidth: '600px' }}>
+            <thead>
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: '48px' }}>
-                  <div className="spinner" />
-                </td>
+                <th>Order Info</th>
+                <th>Items</th>
+                <th>Payment</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Timestamp</th>
               </tr>
-            ) : orders.length === 0 ? (
-              <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
-                  No orders found matching your criteria.
-                </td>
-              </tr>
-            ) : orders.map(order => {
-              const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-              const date = new Date(order.timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-              
-              return (
-                <tr key={order.id}>
-                  <td>
-                    <div style={{ fontWeight: 'bold', fontSize: '15px' }}>{order.location}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>#{order.display_id || order.id.substring(0,8).toUpperCase()}</div>
-                    {order.metadata?.staff_email && (
-                      <div style={{ fontSize: '11px', color: 'var(--accent-gold)', marginTop: '4px' }}>Staff: {order.metadata.staff_email}</div>
-                    )}
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {items.map((item, idx) => (
-                        <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
-                            {item.is_combo && (
-                              <span style={{ 
-                                fontSize: '9px', fontWeight: 'bold', padding: '1px 5px', 
-                                background: 'linear-gradient(90deg,#FF6B35,#FF2D55)', color: 'white', 
-                                borderRadius: '4px', letterSpacing: '0.5px' 
-                              }}>COMBO</span>
-                            )}
-                            <span>{item.quantity}x {item.food_name || item.name}</span>
-                          </div>
-                          {item.item_note && (
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', display: 'flex', alignItems: 'flex-start', gap: '4px', marginLeft: item.is_combo ? '48px' : '0' }}>
-                              <span style={{ opacity: 0.5 }}>📝</span>
-                              <span>{item.item_note}</span>
-                            </div>
-                          )}
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '48px' }}><div className="spinner" /></td></tr>
+              ) : orders.length === 0 ? (
+                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>No orders found matching your criteria.</td></tr>
+              ) : orders.map(order => {
+                const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+                const date = new Date(order.timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+                return (
+                  <tr key={order.id}>
+                    <td>
+                      <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{order.location}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>#{order.display_id || order.id.substring(0,8).toUpperCase()}</div>
+                      {(order.profiles?.full_name || order.metadata?.staff_name || order.profiles?.employee_code || order.metadata?.staff_code || order.staff_id) ? (
+                        <div style={{ fontSize: '11px', color: 'var(--secondary-glow)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', background: 'rgba(0,210,255,0.1)', border: '1px solid rgba(0,210,255,0.25)', fontSize: '10px', letterSpacing: '0.5px' }}>
+                            {order.profiles?.employee_code || order.metadata?.staff_code || (order.staff_id ? 'EMP-' + order.staff_id.substring(0,6).toUpperCase() : 'STAFF')}
+                          </span>
+                          <span style={{ fontWeight: 600 }}>{order.profiles?.full_name || order.metadata?.staff_name || 'Staff'}</span>
                         </div>
-                      ))}
+                      ) : (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>📱 Online / App</div>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {items.map((item, idx) => (
+                          <div key={idx} style={{ fontSize: '13px' }}>
+                            {item.is_combo && <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '1px 5px', background: 'linear-gradient(90deg,#FF6B35,#FF2D55)', color: 'white', borderRadius: '4px', marginRight: '4px' }}>COMBO</span>}
+                            {item.quantity}x {item.food_name || item.name}
+                            {item.item_note && <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>📝 {item.item_note}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--accent-gold)' }}>
+                        {order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
+                      </span>
+                      {order.payment_method === 'POS_CASH' && order.collected_cash > 0 && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                          <div>Coll: ₹{order.collected_cash}</div>
+                          <div>Ret: ₹{order.return_cash}</div>
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>₹{order.total_amount}</td>
+                    <td>
+                      <span className="badge" style={{ background: `${getStatusColor(order.status)}15`, color: getStatusColor(order.status), border: `1px solid ${getStatusColor(order.status)}30` }}>
+                        {order.status}
+                      </span>
+                    </td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Clock size={12} /> {date}</div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="oh-order-cards">
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '48px' }}><div className="spinner" /></div>
+          ) : orders.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>No orders found matching your criteria.</div>
+          ) : orders.map(order => {
+            const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+            const date = new Date(order.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+            const sc = getStatusColor(order.status);
+            return (
+              <div key={order.id} className="oh-order-card" style={{ borderLeft: `3px solid ${sc}` }}>
+                <div className="oh-card-top">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="oh-card-location">{order.location}</div>
+                    <div className="oh-card-id">#{order.display_id || order.id.substring(0,8).toUpperCase()}</div>
+                    {(order.profiles?.full_name || order.metadata?.staff_name || order.profiles?.employee_code || order.metadata?.staff_code || order.staff_id) ? (
+                      <div style={{ fontSize: '11px', color: 'var(--secondary-glow)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '10px' }}>
+                          [{order.profiles?.employee_code || order.metadata?.staff_code || (order.staff_id ? 'EMP-' + order.staff_id.substring(0,6).toUpperCase() : 'STAFF')}]
+                        </span>
+                        <span style={{ fontWeight: 600 }}>{order.profiles?.full_name || order.metadata?.staff_name || 'Staff'}</span>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>📱 Online / App</div>
+                    )}
+                  </div>
+                  <div className="oh-card-amount">₹{order.total_amount}</div>
+                </div>
+
+                <div className="oh-card-items">
+                  {items.map((item, idx) => (
+                    <div key={idx} className="oh-card-item-row">
+                      {item.is_combo && <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '1px 4px', background: 'linear-gradient(90deg,#FF6B35,#FF2D55)', color: 'white', borderRadius: '3px', flexShrink: 0 }}>COMBO</span>}
+                      <span>{item.quantity}x {item.food_name || item.name}</span>
                     </div>
-                  </td>
-                  <td>
+                  ))}
+                </div>
+
+                <div className="oh-card-footer">
+                  <div className="oh-card-meta">
                     <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--accent-gold)' }}>
                       {order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
                     </span>
-                    {order.payment_method === 'POS_CASH' && order.collected_cash > 0 && (
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <div>Collected: ₹{order.collected_cash}</div>
-                        <div>Return: ₹{order.return_cash}</div>
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ fontWeight: 'bold' }}>₹{order.total_amount}</td>
-                  <td>
-                    <span className="badge" style={{ background: `${getStatusColor(order.status)}15`, color: getStatusColor(order.status), border: `1px solid ${getStatusColor(order.status)}30` }}>
+                    <span className="badge" style={{ background: `${sc}15`, color: sc, border: `1px solid ${sc}30` }}>
                       {order.status}
                     </span>
-                  </td>
-                  <td style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Clock size={12} /> {date}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                  </div>
+                  <div className="oh-card-time"><Clock size={11} /> {date}</div>
+                </div>
+
+                {order.payment_method === 'POS_CASH' && order.collected_cash > 0 && (
+                  <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
+                    <span>Collected: ₹{order.collected_cash}</span>
+                    <span>Return: ₹{order.return_cash}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-        
+
         {/* Pagination */}
-        <div style={{ padding: '20px', borderTop: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            Page {page + 1}
-          </div>
+        <div className="oh-pagination">
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Page {page + 1}</div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
-              className="btn-ghost" 
-              onClick={() => { setPage(p => Math.max(0, p - 1)); window.scrollTo(0,0); }}
-              disabled={page === 0}
-            >
-              <ChevronLeft size={18} /> Previous
+            <button className="btn-ghost" onClick={() => { setPage(p => Math.max(0, p - 1)); window.scrollTo(0,0); }} disabled={page === 0}>
+              <ChevronLeft size={16} /> Prev
             </button>
-            <button 
-              className="btn-ghost" 
-              onClick={() => { setPage(p => p + 1); window.scrollTo(0,0); }}
-              disabled={orders.length < pageSize}
-            >
-              Next <ChevronRight size={18} />
+            <button className="btn-ghost" onClick={() => { setPage(p => p + 1); window.scrollTo(0,0); }} disabled={orders.length < pageSize}>
+              Next <ChevronRight size={16} />
             </button>
           </div>
         </div>

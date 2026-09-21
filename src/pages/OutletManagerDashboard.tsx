@@ -23,6 +23,7 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
   const [cinemaName, setCinemaName] = useState(user.cinema_name || '');
   const [kdsConfigs, setKdsConfigs] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<string | number>(1);
+  const [mobileQueueFilter, setMobileQueueFilter] = useState<'ALL' | 'PENDING' | 'PREPARING' | 'READY'>('ALL');
 
   useEffect(() => {
     fetchOrders();
@@ -304,86 +305,195 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     const pendingPartial = getPartialOrdersForTabAndStatus(activeTab, 'PENDING');
     const preparingPartial = getPartialOrdersForTabAndStatus(activeTab, 'PREPARING');
     const readyPartial = getPartialOrdersForTabAndStatus(activeTab, 'READY');
+    const totalOrders = pendingPartial.length + preparingPartial.length + readyPartial.length;
+
+    const showPending = mobileQueueFilter === 'ALL' || mobileQueueFilter === 'PENDING';
+    const showPreparing = mobileQueueFilter === 'ALL' || mobileQueueFilter === 'PREPARING';
+    const showReady = mobileQueueFilter === 'ALL' || mobileQueueFilter === 'READY';
 
     return (
-      <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
-        {/* Column 1: PENDING */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h3 style={{ color: 'var(--accent-gold)' }}>New Tickets</h3>
-            <span style={{ background: 'rgba(255,179,106,0.1)', color: 'var(--accent-gold)', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%', boxSizing: 'border-box' }}>
+        {/* Mobile Quick Queue Filter Tabs */}
+        <div className="kds-mobile-queue-tabs">
+          <button
+            onClick={() => setMobileQueueFilter('ALL')}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '10px',
+              border: mobileQueueFilter === 'ALL' ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.08)',
+              background: mobileQueueFilter === 'ALL' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.03)',
+              color: mobileQueueFilter === 'ALL' ? 'white' : 'var(--text-muted)',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
+            }}
+          >
+            <span>All Queues</span>
+            <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '8px' }}>
+              {totalOrders}
+            </span>
+          </button>
+          <button
+            onClick={() => setMobileQueueFilter('PENDING')}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '10px',
+              border: mobileQueueFilter === 'PENDING' ? '1px solid var(--accent-gold)' : '1px solid rgba(255,255,255,0.08)',
+              background: mobileQueueFilter === 'PENDING' ? 'rgba(255,179,106,0.2)' : 'rgba(255,255,255,0.03)',
+              color: mobileQueueFilter === 'PENDING' ? 'var(--accent-gold)' : 'var(--text-muted)',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
+            }}
+          >
+            <span>New Tickets</span>
+            <span style={{ fontSize: '10px', background: 'rgba(255,179,106,0.2)', padding: '1px 6px', borderRadius: '8px', color: 'var(--accent-gold)', fontWeight: 'bold' }}>
               {pendingPartial.length}
             </span>
-          </div>
-          {pendingPartial.map(order => (
-            <OrderCard 
-              key={order.id} 
-              order={order} 
-              hasUnread={unreadMessages[order.id]} 
-              onAction={() => updateStatus(order.id, 'PREPARING')} 
-              onChat={() => openChat(order)} 
-              onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
-              actionLabel="Accept & Prepare" 
-              actionColor="var(--primary-glow)" 
-              items={order.matchingItems!} 
-            />
-          ))}
-          {pendingPartial.length === 0 && <EmptyState type="PENDING" />}
-        </div>
-
-        {/* Column 2: PREPARING */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h3 style={{ color: 'var(--secondary-glow)' }}>In Kitchen</h3>
-            <span style={{ background: 'rgba(0,210,255,0.1)', color: 'var(--secondary-glow)', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>
+          </button>
+          <button
+            onClick={() => setMobileQueueFilter('PREPARING')}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '10px',
+              border: mobileQueueFilter === 'PREPARING' ? '1px solid var(--secondary-glow)' : '1px solid rgba(255,255,255,0.08)',
+              background: mobileQueueFilter === 'PREPARING' ? 'rgba(0,210,255,0.2)' : 'rgba(255,255,255,0.03)',
+              color: mobileQueueFilter === 'PREPARING' ? 'var(--secondary-glow)' : 'var(--text-muted)',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
+            }}
+          >
+            <span>In Kitchen</span>
+            <span style={{ fontSize: '10px', background: 'rgba(0,210,255,0.2)', padding: '1px 6px', borderRadius: '8px', color: 'var(--secondary-glow)', fontWeight: 'bold' }}>
               {preparingPartial.length}
             </span>
-          </div>
-          {preparingPartial.map(order => (
-            <OrderCard 
-              key={order.id} 
-              order={order} 
-              hasUnread={unreadMessages[order.id]} 
-              onAction={() => updateStatus(order.id, 'READY')} 
-              onChat={() => openChat(order)} 
-              onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
-              actionLabel="Mark All Ready" 
-              actionColor="var(--secondary-glow)" 
-              items={order.matchingItems!} 
-            />
-          ))}
-          {preparingPartial.length === 0 && <EmptyState type="PREPARING" />}
-        </div>
-
-        {/* Column 3: READY / DELIVERED */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-             <h3 style={{ color: '#4CAF50' }}>Delivery Queue</h3>
-             <span style={{ background: 'rgba(76,175,80,0.1)', color: '#4CAF50', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>
+          </button>
+          <button
+            onClick={() => setMobileQueueFilter('READY')}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '10px',
+              border: mobileQueueFilter === 'READY' ? '1px solid #4CAF50' : '1px solid rgba(255,255,255,0.08)',
+              background: mobileQueueFilter === 'READY' ? 'rgba(76,175,80,0.2)' : 'rgba(255,255,255,0.03)',
+              color: mobileQueueFilter === 'READY' ? '#4CAF50' : 'var(--text-muted)',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
+            }}
+          >
+            <span>Delivery Queue</span>
+            <span style={{ fontSize: '10px', background: 'rgba(76,175,80,0.2)', padding: '1px 6px', borderRadius: '8px', color: '#4CAF50', fontWeight: 'bold' }}>
               {readyPartial.length}
             </span>
-          </div>
-          {readyPartial.map(order => (
-            <OrderCard 
-              key={order.id} 
-              order={order} 
-              hasUnread={unreadMessages[order.id]} 
-              onAction={() => updateStatus(order.id, 'DELIVERED')} 
-              onChat={() => openChat(order)} 
-              onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
-              actionLabel="All Delivered" 
-              actionColor="#4CAF50" 
-              items={order.matchingItems!} 
-            />
-          ))}
-          {readyPartial.length === 0 && <EmptyState type="READY" />}
+          </button>
+        </div>
+
+        <div className="kds-columns">
+          {/* Column 1: PENDING */}
+          {showPending && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <h3 style={{ color: 'var(--accent-gold)', fontSize: '16px', margin: 0 }}>New Tickets</h3>
+                <span style={{ background: 'rgba(255,179,106,0.1)', color: 'var(--accent-gold)', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>
+                  {pendingPartial.length}
+                </span>
+              </div>
+              {pendingPartial.map(order => (
+                <OrderCard 
+                  key={order.id} 
+                  order={order} 
+                  hasUnread={unreadMessages[order.id]} 
+                  onAction={() => updateStatus(order.id, 'PREPARING')} 
+                  onChat={() => openChat(order)} 
+                  onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
+                  actionLabel="Accept & Prepare" 
+                  actionColor="var(--primary-glow)" 
+                  items={order.matchingItems!} 
+                />
+              ))}
+              {pendingPartial.length === 0 && <EmptyState type="PENDING" />}
+            </div>
+          )}
+
+          {/* Column 2: PREPARING */}
+          {showPreparing && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <h3 style={{ color: 'var(--secondary-glow)', fontSize: '16px', margin: 0 }}>In Kitchen</h3>
+                <span style={{ background: 'rgba(0,210,255,0.1)', color: 'var(--secondary-glow)', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>
+                  {preparingPartial.length}
+                </span>
+              </div>
+              {preparingPartial.map(order => (
+                <OrderCard 
+                  key={order.id} 
+                  order={order} 
+                  hasUnread={unreadMessages[order.id]} 
+                  onAction={() => updateStatus(order.id, 'READY')} 
+                  onChat={() => openChat(order)} 
+                  onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
+                  actionLabel="Mark All Ready" 
+                  actionColor="var(--secondary-glow)" 
+                  items={order.matchingItems!} 
+                />
+              ))}
+              {preparingPartial.length === 0 && <EmptyState type="PREPARING" />}
+            </div>
+          )}
+
+          {/* Column 3: READY / DELIVERED */}
+          {showReady && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                 <h3 style={{ color: '#4CAF50', fontSize: '16px', margin: 0 }}>Delivery Queue</h3>
+                 <span style={{ background: 'rgba(76,175,80,0.1)', color: '#4CAF50', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>
+                  {readyPartial.length}
+                </span>
+              </div>
+              {readyPartial.map(order => (
+                <OrderCard 
+                  key={order.id} 
+                  order={order} 
+                  hasUnread={unreadMessages[order.id]} 
+                  onAction={() => updateStatus(order.id, 'DELIVERED')} 
+                  onChat={() => openChat(order)} 
+                  onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
+                  actionLabel="All Delivered" 
+                  actionColor="#4CAF50" 
+                  items={order.matchingItems!} 
+                />
+              ))}
+              {readyPartial.length === 0 && <EmptyState type="READY" />}
+            </div>
+          )}
         </div>
       </div>
     );
   };
 
   return (
-    <div className="animate-lucrative" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+    <div className="animate-lucrative" style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <style>{`
         @keyframes message-glow {
           0% { box-shadow: 0 0 5px var(--primary-glow); transform: scale(1); }
@@ -420,64 +530,154 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
         .urgency-critical-border { animation: urgency-pulse-red-border 1.5s infinite; }
         .urgency-critical-glow { animation: urgency-pulse-red-glow 1.5s infinite; }
         .urgency-high { animation: urgency-pulse-orange 2s infinite; }
+        .kds-columns {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 20px;
+          width: 100%;
+          box-sizing: border-box;
+        }
+        .kds-tabs-bar {
+          display: flex;
+          gap: 8px;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+          padding-bottom: 12px;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+          width: 100%;
+        }
+        .kds-tabs-bar::-webkit-scrollbar { display: none; }
+        .kds-mobile-queue-tabs {
+          display: none;
+          gap: 6px;
+          width: 100%;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          padding-bottom: 4px;
+          margin-bottom: 4px;
+          scrollbar-width: none;
+        }
+        .kds-mobile-queue-tabs::-webkit-scrollbar { display: none; }
+        .kds-order-card {
+          padding: 18px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+          position: relative;
+          transition: all 0.3s ease;
+          width: 100%;
+          box-sizing: border-box;
+          overflow: hidden;
+        }
+        .kds-items-container {
+          background: rgba(0,0,0,0.25);
+          padding: 14px;
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,0.05);
+          box-sizing: border-box;
+          width: 100%;
+        }
+        .kds-empty-state {
+          padding: 28px 16px;
+          border: 1px dashed var(--glass-border);
+          border-radius: 16px;
+          text-align: center;
+          color: var(--text-muted);
+          box-sizing: border-box;
+          width: 100%;
+        }
+        .kds-header-actions {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          width: 100%;
+          margin-top: 4px;
+        }
+        @media (max-width: 1024px) {
+          .kds-columns {
+            grid-template-columns: minmax(0, 1fr) !important;
+            gap: 16px !important;
+          }
+          .kds-mobile-queue-tabs {
+            display: flex !important;
+          }
+        }
+        @media (max-width: 768px) {
+          .kds-order-card {
+            padding: 14px 12px !important;
+            gap: 12px !important;
+            border-radius: 14px !important;
+          }
+          .kds-items-container {
+            padding: 10px !important;
+            border-radius: 10px !important;
+          }
+          .kds-empty-state {
+            padding: 18px 12px !important;
+            border-radius: 12px !important;
+          }
+          .kds-header-actions {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr auto !important;
+            gap: 8px !important;
+          }
+          .kds-header-actions > * {
+            flex: unset !important;
+            padding: 8px 10px !important;
+            font-size: 12px !important;
+            justify-content: center !important;
+          }
+        }
+        @media (max-width: 420px) {
+          .kds-header-actions {
+            grid-template-columns: 1fr 1fr !important;
+          }
+          .kds-header-actions > *:last-child {
+            grid-column: span 2 !important;
+          }
+        }
       `}</style>
 
-      <header className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h1 style={{ fontSize: '32px', marginBottom: '8px' }}>{cinemaName ? `${cinemaName} POS` : 'Live Operating View'}</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Operational Heatmap Mode: <strong>TICKET URGENCIES ACTIVE</strong></p>
-             <div style={{ display: 'flex', gap: '8px' }}>
-                <span style={{ fontSize: '10px', background: 'rgba(244, 67, 54, 0.1)', color: '#F44336', padding: '2px 8px', borderRadius: '4px' }}>
-                  {orders.filter(o => {
-                    if (o.status === 'DELIVERED' || o.status === 'CANCELLED') return false;
-                    const rawTime = o.timestamp;
-                    const t = (rawTime?.endsWith('Z') || rawTime?.includes('+')) ? new Date(rawTime).getTime() : new Date(rawTime + 'Z').getTime();
-                    const elapsed = (Date.now() - t) / 60000;
-                    if (o.status === 'PENDING') return elapsed >= 8;
-                    if (o.status === 'PREPARING') return elapsed >= 15;
-                    if (o.status === 'READY') return elapsed >= 12;
-                    return false;
-                  }).length} Critical
-                </span>
-             </div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '16px' }}>
+      <header style={{ width: '100%', boxSizing: 'border-box', paddingRight: '52px' }}>
+        <h1 style={{ fontSize: 'clamp(18px, 5vw, 32px)', marginBottom: '6px', wordBreak: 'break-word' }}>{cinemaName ? `${cinemaName} POS` : 'Live Operating View'}</h1>
+        <p style={{ color: 'var(--text-muted)', margin: '0 0 12px', fontSize: '12px' }}>Operational Heatmap Mode: <strong>TICKET URGENCIES ACTIVE</strong> — {orders.filter(o => {
+          if (o.status === 'DELIVERED' || o.status === 'CANCELLED') return false;
+          const rawTime = o.timestamp;
+          const t = (rawTime?.endsWith('Z') || rawTime?.includes('+')) ? new Date(rawTime).getTime() : new Date(rawTime + 'Z').getTime();
+          const elapsed = (Date.now() - t) / 60000;
+          if (o.status === 'PENDING') return elapsed >= 8;
+          if (o.status === 'PREPARING') return elapsed >= 15;
+          if (o.status === 'READY') return elapsed >= 12;
+          return false;
+        }).length} <span style={{ color: '#F44336', fontWeight: 'bold' }}>Critical</span>
+        </p>
+        <div className="kds-header-actions">
              <button 
                 onClick={() => setShowKillSwitch(true)}
-                className="glass-card hover-lift" 
-                style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '12px', borderRadius: '16px', background: 'rgba(244, 67, 54, 0.1)', border: '1px solid rgba(244, 67, 54, 0.2)', color: '#F44336', cursor: 'pointer' }}
+                className="glass-card" 
+                style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '14px', background: 'rgba(244, 67, 54, 0.1)', border: '1px solid rgba(244, 67, 54, 0.2)', color: '#F44336', cursor: 'pointer' }}
              >
-                 <Power size={20} />
-                 <span style={{ fontWeight: 600 }}>Emergency Kill Switch</span>
+                 <Power size={16} />
+                 <span style={{ fontWeight: 600, fontSize: '13px' }}>Kill Switch</span>
              </button>
              <button 
                 onClick={() => setShowPaymentConfig(true)}
-                className="glass-card hover-lift" 
-                style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '12px', borderRadius: '16px', background: 'rgba(255, 152, 0, 0.1)', border: '1px solid rgba(255, 152, 0, 0.2)', color: '#FF9800', cursor: 'pointer' }}
+                className="glass-card" 
+                style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '14px', background: 'rgba(255, 152, 0, 0.1)', border: '1px solid rgba(255, 152, 0, 0.2)', color: '#FF9800', cursor: 'pointer' }}
              >
-                 <CreditCard size={20} />
-                 <span style={{ fontWeight: 600 }}>Payment Config</span>
+                 <CreditCard size={16} />
+                 <span style={{ fontWeight: 600, fontSize: '13px' }}>Payment</span>
              </button>
-             <div className="glass-card" style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '12px', borderRadius: '16px' }}>
-                 <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 10px #4CAF50' }}></div>
-                 <span style={{ fontWeight: 600 }}>Live Sync Active</span>
+             <div className="glass-card" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '14px' }}>
+                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 8px #4CAF50', flexShrink: 0 }}></div>
+                 <span style={{ fontWeight: 600, fontSize: '13px' }}>Live</span>
              </div>
         </div>
       </header>
 
       {/* Screen Tabs Bar */}
-      <div 
-        style={{ 
-          display: 'flex', 
-          gap: '8px', 
-          borderBottom: '1px solid rgba(255,255,255,0.06)', 
-          paddingBottom: '12px', 
-          overflowX: 'auto',
-          margin: '-12px 0 8px'
-        }}
-      >
+      <div className="kds-tabs-bar" style={{ marginTop: '-8px' }}>
         <button
           onClick={() => setActiveTab('ALL')}
           style={{
@@ -605,63 +805,62 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
 
   return (
     <div 
-      className={`glass-card ${urgency.className}`} 
+      className={`glass-card kds-order-card ${urgency.className}`} 
       style={{ 
-        padding: '20px', 
-        display: 'flex', 
-        flexDirection: 'column', 
-        gap: '16px', 
         borderLeft: `4px solid ${urgency.color}`, 
         boxShadow: urgency.glow,
-        position: 'relative',
-        transition: 'all 0.5s ease'
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', width: '100%' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap' }}>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>#{displayOrderId}</div>
             {urgency.badge && (
-              <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', background: `${urgency.color}20`, color: urgency.color, borderRadius: '4px', border: `1px solid ${urgency.color}40` }}>
+              <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', background: `${urgency.color}20`, color: urgency.color, borderRadius: '4px', border: `1px solid ${urgency.color}40`, whiteSpace: 'nowrap' }}>
                 {urgency.badge.toUpperCase()}
               </span>
             )}
           </div>
-          <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{order.location}</div>
+          <div style={{ fontSize: '15px', fontWeight: 'bold', wordBreak: 'break-word', lineHeight: 1.3 }}>{order.location}</div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: urgency.color, fontSize: '12px', fontWeight: 'bold' }}>
-                <Clock size={12} /> {elapsed}m
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{timeStr}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: urgency.color, fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+            <Clock size={12} /> {elapsed}m
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{timeStr}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ 
-              fontSize: '11px', 
-              background: 'rgba(255,255,255,0.05)', 
-              padding: '2px 8px', 
-              borderRadius: '4px', 
-              color: 'var(--text-muted)'
-          }}>
-            {order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-              <button 
-                onClick={() => setShowUser(!showUser)} 
-                style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: showUser ? 'var(--accent-gold)' : 'var(--text-muted)', padding: '6px', borderRadius: '8px', cursor: 'pointer' }}
-              >
-                  <User size={14} />
-              </button>
-              <button 
-                onClick={onChat} 
-                className={hasUnread ? 'message-notify-glow' : ''}
-                style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'var(--primary-glow)', padding: '6px', borderRadius: '8px', cursor: 'pointer' }}
-              >
-                  <MessageSquare size={14} />
-              </button>
-          </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', width: '100%' }}>
+        <div style={{ 
+          fontSize: '11px', 
+          background: 'rgba(255,255,255,0.05)', 
+          padding: '2px 8px', 
+          borderRadius: '4px', 
+          color: 'var(--text-muted)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minWidth: 0,
+          flexShrink: 1
+        }}>
+          {order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          <button 
+            onClick={() => setShowUser(!showUser)} 
+            style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: showUser ? 'var(--accent-gold)' : 'var(--text-muted)', padding: '6px 8px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            <User size={14} />
+          </button>
+          <button 
+            onClick={onChat} 
+            className={hasUnread ? 'message-notify-glow' : ''}
+            style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'var(--primary-glow)', padding: '6px 8px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            <MessageSquare size={14} />
+          </button>
+        </div>
       </div>
 
       {showUser && (
@@ -675,7 +874,7 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
         </div>
       )}
 
-      <div style={{ background: 'rgba(0,0,0,0.25)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div className="kds-items-container">
         {items?.map((item, idx) => {
           const itemId = item.item_id || item.food_id || String(idx);
           const isDelivered = item.is_delivered === true || item.kds_status === 'DELIVERED';
@@ -684,31 +883,34 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
             <div 
               key={itemId || idx} 
               style={{ 
-                marginBottom: idx !== items.length - 1 ? '12px' : 0,
-                paddingBottom: idx !== items.length - 1 ? '12px' : 0,
+                marginBottom: idx !== items.length - 1 ? '10px' : 0,
+                paddingBottom: idx !== items.length - 1 ? '10px' : 0,
                 borderBottom: idx !== items.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                  {item.is_combo && (
-                    <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '2px 5px', background: 'linear-gradient(90deg,#FF6B35,#FF2D55)', color: 'white', borderRadius: '4px' }}>COMBO</span>
-                  )}
-                  <span style={{ 
-                    fontSize: '14px', 
-                    fontWeight: 600,
-                    textDecoration: isDelivered ? 'line-through' : 'none', 
-                    color: isDelivered ? '#4CAF50' : 'inherit',
-                    opacity: isDelivered ? 0.75 : 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {item.quantity}x {item.food_name || item.name}
-                  </span>
-                  <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', padding: '2px 6px', borderRadius: '4px' }}>
-                    {item.food_category || 'Classics'}
-                  </span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', width: '100%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {item.is_combo && (
+                      <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '1px 5px', background: 'linear-gradient(90deg,#FF6B35,#FF2D55)', color: 'white', borderRadius: '4px', flexShrink: 0 }}>COMBO</span>
+                    )}
+                    <span style={{ 
+                      fontSize: '13px', 
+                      fontWeight: 600,
+                      textDecoration: isDelivered ? 'line-through' : 'none', 
+                      color: isDelivered ? '#4CAF50' : 'inherit',
+                      opacity: isDelivered ? 0.75 : 1,
+                      wordBreak: 'break-word',
+                      lineHeight: 1.3
+                    }}>
+                      {item.quantity}x {item.food_name || item.name}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '9px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', padding: '1px 6px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      {item.food_category || 'Classics'}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Individual Item Tick Button */}
@@ -722,8 +924,8 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '5px',
-                      padding: '4px 10px',
+                      gap: '4px',
+                      padding: '4px 8px',
                       borderRadius: '8px',
                       border: isDelivered ? '1px solid #4CAF50' : '1px solid rgba(255,255,255,0.2)',
                       background: isDelivered ? 'rgba(76,175,80,0.18)' : 'rgba(255,255,255,0.06)',
@@ -732,11 +934,12 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
                       fontSize: '11px',
                       fontWeight: 600,
                       transition: 'all 0.2s ease',
-                      flexShrink: 0
+                      flexShrink: 0,
+                      whiteSpace: 'nowrap'
                     }}
                   >
-                    <CheckCircle size={14} color={isDelivered ? '#4CAF50' : 'currentColor'} />
-                    <span>{isDelivered ? 'Delivered' : 'Ready / Deliver'}</span>
+                    <CheckCircle size={13} color={isDelivered ? '#4CAF50' : 'currentColor'} />
+                    <span>{isDelivered ? 'Delivered' : 'Ready'}</span>
                   </button>
                 )}
               </div>
@@ -826,11 +1029,11 @@ function ChatModal({ order, onClose }: { order: Order; onClose: () => void }) {
   );
 }
 
-function EmptyState({ type }) {
+function EmptyState({ type }: { type?: string }) {
   return (
-    <div style={{ padding: '32px', border: '1px dashed var(--glass-border)', borderRadius: '16px', textAlign: 'center', color: 'var(--text-muted)' }}>
-      <ShoppingBag size={32} opacity={0.3} style={{ marginBottom: '12px' }} />
-      <div style={{ fontSize: '14px' }}>No orders in this queue</div>
+    <div className="kds-empty-state">
+      <ShoppingBag size={28} opacity={0.3} style={{ marginBottom: '8px' }} />
+      <div style={{ fontSize: '13px' }}>No orders in this queue</div>
     </div>
   );
 }

@@ -200,15 +200,15 @@ export default function KDSConfig({ user }: { user: any }) {
   }
 
   return (
-    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ fontSize: '32px', marginBottom: '8px', fontWeight: '900', letterSpacing: '-1.5px' }}>Kitchen Screen Routing (KDS)</h1>
-          <p style={{ color: 'var(--text-secondary)' }}>Route menu items dynamically to 5 physical kitchen display screens based on category.</p>
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '32px', width: '100%', maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
+      <header className="kds-page-header" style={{ paddingRight: '52px', boxSizing: 'border-box' }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ wordBreak: 'break-word' }}>Kitchen Screen Routing (KDS)</h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '6px' }}>Route menu items dynamically to physical kitchen display screens based on category.</p>
         </div>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '24px' }}>
+      <div className="kds-screen-grid">
         {configs.map(screen => {
           const num = screen.screen_number;
           return (
@@ -225,7 +225,7 @@ export default function KDSConfig({ user }: { user: any }) {
               }}
             >
               {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="kds-card-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{ 
                     width: '36px', height: '36px', 

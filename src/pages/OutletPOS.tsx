@@ -431,6 +431,8 @@ export default function OutletPOS({ user }: { user: any }) {
                 platform_charges: platform_charges,
                 outlet_number: outletNumber,
                 staff_id: user?.id,
+                staff_code: user?.employee_code || user?.employeeCode || null,
+                staff_name: user?.full_name || user?.name || null,
                 staff_email: user?.email
             }
         };
