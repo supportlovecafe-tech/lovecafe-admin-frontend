@@ -20,7 +20,8 @@ export default function OutletsManager() {
     screens: [],
     loginEmail: '',
     loginPassword: '',
-    outletNumber: ''
+    outletNumber: '',
+    isActive: true
   });
   const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
 
@@ -40,8 +41,29 @@ export default function OutletsManager() {
     }
   };
 
+  const handleToggleActive = async (cinema, e) => {
+    e?.stopPropagation();
+    const newStatus = cinema.is_active === false ? true : false;
+    
+    // Optimistic UI update
+    setCinemas(prev => prev.map(c => c.id === cinema.id ? { ...c, is_active: newStatus } : c));
+    
+    try {
+      const { error } = await supabase.from('cinemas').update({ is_active: newStatus }).eq('id', cinema.id);
+      if (error) {
+        console.error("Failed to update status:", error);
+        alert("Failed to update status: " + error.message);
+        // Rollback
+        setCinemas(prev => prev.map(c => c.id === cinema.id ? { ...c, is_active: !newStatus } : c));
+      }
+    } catch (err) {
+      console.error("Error updating status:", err);
+      setCinemas(prev => prev.map(c => c.id === cinema.id ? { ...c, is_active: !newStatus } : c));
+    }
+  };
+
   const resetForm = () => {
-    setFormData({ name: '', location: '', feature: '', imageUrl: '', screens: [], loginEmail: '', loginPassword: '', outletNumber: '' });
+    setFormData({ name: '', location: '', feature: '', imageUrl: '', screens: [], loginEmail: '', loginPassword: '', outletNumber: '', isActive: true });
     setIsEditing(false);
     setCurrentId(null);
   };
@@ -55,7 +77,8 @@ export default function OutletsManager() {
         screens: cinema.screens || [],
         loginEmail: cinema.login_email || '',
         loginPassword: '',
-        outletNumber: cinema.outlet_number || ''
+        outletNumber: cinema.outlet_number || '',
+        isActive: cinema.is_active !== false
     });
     setIsEditing(true);
     setCurrentId(cinema.id);
@@ -153,7 +176,8 @@ export default function OutletsManager() {
     if (isEditing) {
         const { error } = await supabase.from('cinemas').update({ 
             name: formData.name, location: formData.location, feature: formData.feature, image_url: formData.imageUrl,
-            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null
+            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null,
+            is_active: formData.isActive
         }).eq('id', currentId);
         
         if (error) alert(error.message);
@@ -201,7 +225,8 @@ export default function OutletsManager() {
 
         const { data: cinema, error: cinemaErr } = await supabase.from('cinemas').insert([{ 
             name: formData.name, location: formData.location, feature: formData.feature, image_url: formData.imageUrl,
-            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null
+            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null,
+            is_active: formData.isActive
         }]).select().single();
 
         if (cinemaErr) alert(cinemaErr.message);
@@ -266,26 +291,76 @@ export default function OutletsManager() {
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '12px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
                     {filteredCinemas.map(cinema => (
-                        <div key={cinema.id} className="glass-card hover-card" style={{ overflow: 'hidden' }}>
+                        <div 
+                            key={cinema.id} 
+                            className="glass-card hover-card" 
+                            style={{ 
+                                overflow: 'hidden',
+                                border: cinema.is_active === false ? '1px solid rgba(255, 179, 106, 0.3)' : '1px solid var(--glass-border)',
+                                opacity: cinema.is_active === false ? 0.8 : 1,
+                                transition: 'all 0.25s ease'
+                            }}
+                        >
                             <div style={{ height: '160px', position: 'relative', background: 'var(--surface-container-high)' }}>
                                 <img 
                                   src={cinema.image_url ? cinema.image_url : 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400'} 
                                   alt={cinema.name} 
-                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover', filter: cinema.is_active === false ? 'grayscale(35%)' : 'none' }} 
                                   onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400'; }}
                                 />
+                                
+                                {/* Status Indicator Badge */}
+                                <div style={{ position: 'absolute', top: 12, left: 12 }}>
+                                    <span style={{ 
+                                        background: cinema.is_active !== false ? 'rgba(34, 197, 94, 0.9)' : 'rgba(234, 88, 12, 0.9)', 
+                                        color: 'white', 
+                                        padding: '4px 10px', 
+                                        borderRadius: '8px', 
+                                        fontSize: '10px', 
+                                        fontWeight: '800', 
+                                        letterSpacing: '0.5px',
+                                        backdropFilter: 'blur(4px)',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '5px',
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                                    }}>
+                                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff' }} />
+                                        {cinema.is_active !== false ? 'LIVE ON APP' : 'PAUSED / MAINTENANCE'}
+                                    </span>
+                                </div>
+
                                 <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: '8px' }}>
                                     <button onClick={() => handleOpenEdit(cinema)} style={{ background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', cursor: 'pointer' }}><Edit2 size={16} /></button>
                                     <button onClick={() => setDeleteConfirmationId(cinema.id)} style={{ background: 'rgba(211,47,47,0.6)', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', cursor: 'pointer' }}><Trash2 size={16} /></button>
                                 </div>
                             </div>
                             <div style={{ padding: '20px' }}>
-                                <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{cinema.name}</h3>
-                                {cinema.outlet_number && (
-                                    <div style={{ fontSize: '12px', color: 'var(--accent-gold)', fontWeight: 'bold', marginTop: '2px' }}>
-                                        Outlet #{cinema.outlet_number}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                                    <div>
+                                        <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{cinema.name}</h3>
+                                        {cinema.outlet_number && (
+                                            <div style={{ fontSize: '12px', color: 'var(--accent-gold)', fontWeight: 'bold', marginTop: '2px' }}>
+                                                Outlet #{cinema.outlet_number}
+                                            </div>
+                                        )}
                                     </div>
-                                )}
+                                    {/* Quick Active Toggle */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                                        <label className="toggle-switch" title={cinema.is_active !== false ? "Pause outlet from Customer App" : "Activate outlet on Customer App"}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={cinema.is_active !== false} 
+                                                onChange={(e) => handleToggleActive(cinema, e)} 
+                                            />
+                                            <span className="toggle-slider"></span>
+                                        </label>
+                                        <span style={{ fontSize: '10px', color: cinema.is_active !== false ? '#4ade80' : '#f59e0b', fontWeight: 700 }}>
+                                            {cinema.is_active !== false ? 'Active' : 'Paused'}
+                                        </span>
+                                    </div>
+                                </div>
+
                                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
                                     <MapPin size={14} /> {cinema.location}
                                 </div>
@@ -295,9 +370,14 @@ export default function OutletsManager() {
                                         <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{cinema.login_email}</div>
                                     </div>
                                 )}
-                                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     <span style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}>{cinema.screens?.length || 0} Screens</span>
                                     {cinema.feature && <span style={{ background: 'rgba(255,47,146,0.1)', color: 'var(--primary-red)', padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}>{cinema.feature}</span>}
+                                    {cinema.is_active === false && (
+                                        <span style={{ background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '700' }}>
+                                            ⚠️ Maintenance Mode
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -330,6 +410,24 @@ export default function OutletsManager() {
                 </div>
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Active/Inactive Status Toggle in Form */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '14px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 800, color: 'white', marginBottom: '2px' }}>Operational Status</div>
+                            <div style={{ fontSize: '11px', color: formData.isActive ? '#4ade80' : '#f59e0b', fontWeight: 600 }}>
+                                {formData.isActive ? '● Active (Visible on Customer App)' : '○ Paused (Maintenance / Closed)'}
+                            </div>
+                        </div>
+                        <label className="toggle-switch">
+                            <input 
+                                type="checkbox" 
+                                checked={formData.isActive} 
+                                onChange={e => setFormData({ ...formData, isActive: e.target.checked })} 
+                            />
+                            <span className="toggle-slider"></span>
+                        </label>
+                    </div>
+
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
                         <div className="input-group">
                             <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Identity</label>

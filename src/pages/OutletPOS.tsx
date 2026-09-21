@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
 import { 
   ShoppingCart, Plus, Minus, Trash2, Printer, CheckCircle, Store, 
-  Loader2, RefreshCcw, Smartphone, CreditCard, Banknote, X, Search, 
+  Loader2, RefreshCcw, Smartphone, CreditCard, Banknote, Split, X, Search, 
   ArrowRight, Tv, Armchair, Phone 
 } from 'lucide-react';
 
@@ -22,6 +22,11 @@ export default function OutletPOS({ user }: { user: any }) {
   const [seatNumber, setSeatNumber] = useState('');
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [collectedCash, setCollectedCash] = useState('');
+  
+  // Split Payment (Cash + UPI) Details
+  const [splitCash, setSplitCash] = useState<string>('');
+  const [splitUpi, setSplitUpi] = useState<string>('');
+  const [splitCollectedCash, setSplitCollectedCash] = useState<string>('');
 
   // Persistence keys
   const STORAGE_KEYS = {
@@ -336,12 +341,89 @@ export default function OutletPOS({ user }: { user: any }) {
 
   const { subtotal, cgst, sgst, platform_charges, total } = breakdown;
 
+  // Split Payment (Cash + UPI) Auto-calculation Logic
+  const handleSplitCashChange = (val: string) => {
+    setSplitCash(val);
+    if (val === '' || val === '.') {
+      setSplitUpi('');
+      return;
+    }
+    const num = parseFloat(val);
+    if (!isNaN(num)) {
+      if (num >= 0 && num <= total) {
+        const remaining = Math.max(0, Math.round((total - num) * 100) / 100);
+        setSplitUpi(remaining % 1 === 0 ? remaining.toString() : remaining.toFixed(2));
+      } else if (num > total) {
+        setSplitUpi('0');
+      }
+    }
+  };
+
+  const handleSplitUpiChange = (val: string) => {
+    setSplitUpi(val);
+    if (val === '' || val === '.') {
+      setSplitCash('');
+      return;
+    }
+    const num = parseFloat(val);
+    if (!isNaN(num)) {
+      if (num >= 0 && num <= total) {
+        const remaining = Math.max(0, Math.round((total - num) * 100) / 100);
+        setSplitCash(remaining % 1 === 0 ? remaining.toString() : remaining.toFixed(2));
+      } else if (num > total) {
+        setSplitCash('0');
+      }
+    }
+  };
+
+  const handle5050Split = () => {
+    if (total <= 0) return;
+    const half = Math.round((total / 2) * 100) / 100;
+    const rem = Math.round((total - half) * 100) / 100;
+    setSplitCash(half % 1 === 0 ? half.toString() : half.toFixed(2));
+    setSplitUpi(rem % 1 === 0 ? rem.toString() : rem.toFixed(2));
+  };
+
+  // Recalculate split amounts if total updates and split mode is active with filled values
+  useEffect(() => {
+    if (paymentMode === 'Split' && splitCash !== '') {
+      const numCash = parseFloat(splitCash);
+      if (!isNaN(numCash)) {
+        if (numCash <= total) {
+          const rem = Math.max(0, Math.round((total - numCash) * 100) / 100);
+          setSplitUpi(rem % 1 === 0 ? rem.toString() : rem.toFixed(2));
+        } else {
+          setSplitCash(total % 1 === 0 ? total.toString() : total.toFixed(2));
+          setSplitUpi('0');
+        }
+      }
+    }
+  }, [total, paymentMode]);
+
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     if (!customerPhone || !screenNumber || !seatNumber) {
         setIsMobileCartOpen(true);
         alert("Please provide customer phone, screen number, and seat number.");
         return;
+    }
+
+    // Validate Split Payment
+    if (paymentMode === 'Split') {
+        const numCash = parseFloat(splitCash);
+        const numUpi = parseFloat(splitUpi);
+        if (isNaN(numCash) || isNaN(numUpi) || numCash < 0 || numUpi < 0) {
+            alert("Please enter valid Cash and UPI amounts for Split payment.");
+            return;
+        }
+        if (Math.abs((numCash + numUpi) - total) > 0.05) {
+            alert(`Split amounts (Cash ₹${numCash.toFixed(2)} + UPI ₹${numUpi.toFixed(2)} = ₹${(numCash + numUpi).toFixed(2)}) must equal the grand total ₹${total.toFixed(2)}.`);
+            return;
+        }
+        if (splitCollectedCash && parseFloat(splitCollectedCash) < numCash) {
+            alert(`Cash received from customer (₹${parseFloat(splitCollectedCash)}) cannot be less than the required split cash portion (₹${numCash.toFixed(2)}).`);
+            return;
+        }
     }
 
     setPlacingOrder(true);
@@ -407,12 +489,22 @@ export default function OutletPOS({ user }: { user: any }) {
             apply_gst: item.apply_gst
         }));
 
+        const isSplit = paymentMode === 'Split';
+        const numSplitCash = isSplit ? (parseFloat(splitCash) || 0) : 0;
+        const numSplitUpi = isSplit ? (parseFloat(splitUpi) || 0) : 0;
+        const actualCollectedCash = isSplit
+            ? (splitCollectedCash ? (parseFloat(splitCollectedCash) || 0) : numSplitCash)
+            : (paymentMode === 'Cash' ? (Number(collectedCash) || 0) : 0);
+        const actualReturnCash = isSplit
+            ? Math.max(0, actualCollectedCash - numSplitCash)
+            : (paymentMode === 'Cash' ? Math.max(0, actualCollectedCash - total) : 0);
+
         const orderData = {
             cinema_id: cinemaId,
             display_id: displayId,
             staff_id: user?.id,
-            collected_cash: paymentMode === 'Cash' ? (Number(collectedCash) || 0) : 0,
-            return_cash: paymentMode === 'Cash' ? Math.max(0, (Number(collectedCash) || 0) - total) : 0,
+            collected_cash: actualCollectedCash,
+            return_cash: actualReturnCash,
             items: itemsJson,
             total_amount: total, 
             location: locationString,
@@ -420,7 +512,7 @@ export default function OutletPOS({ user }: { user: any }) {
             outlet_customer_id: outletCustomerId,
             status: 'PENDING',
             payment_status: 'PAID',
-            payment_method: paymentMode === 'Cash' ? 'POS_CASH' : paymentMode.toUpperCase(),
+            payment_method: isSplit ? 'POS_SPLIT' : (paymentMode === 'Cash' ? 'POS_CASH' : paymentMode.toUpperCase()),
             timestamp: new Date().toISOString(),
             is_demo_order: true,
             is_pos: true,
@@ -431,7 +523,11 @@ export default function OutletPOS({ user }: { user: any }) {
                 platform_charges: platform_charges,
                 outlet_number: outletNumber,
                 staff_id: user?.id,
-                staff_email: user?.email
+                staff_email: user?.email,
+                ...(isSplit ? {
+                    split_cash: numSplitCash,
+                    split_upi: numSplitUpi
+                } : {})
             }
         };
 
@@ -555,6 +651,9 @@ export default function OutletPOS({ user }: { user: any }) {
     setSeatNumber('');
     setPaymentMode('Cash');
     setCollectedCash('');
+    setSplitCash('');
+    setSplitUpi('');
+    setSplitCollectedCash('');
   };
 
 
@@ -913,18 +1012,26 @@ export default function OutletPOS({ user }: { user: any }) {
 
                         <div>
                             <label className="pos-label">Payment Mode</label>
-                            <div style={{ display: 'flex', gap: '8px' }}>
+                            <div style={{ display: 'flex', gap: '6px' }}>
                                 {[
                                     { id: 'Cash', label: 'Cash', icon: Banknote },
-                                    { id: 'Online', label: 'Online / UPI', icon: Smartphone },
-                                    { id: 'Card', label: 'Card', icon: CreditCard }
+                                    { id: 'Online', label: 'UPI / Online', icon: Smartphone },
+                                    { id: 'Card', label: 'Card', icon: CreditCard },
+                                    { id: 'Split', label: 'Split', icon: Split }
                                 ].map(({ id, label, icon: Icon }) => (
                                     <button
                                         key={id}
                                         type="button"
-                                        onClick={() => setPaymentMode(id)}
+                                        onClick={() => {
+                                            setPaymentMode(id);
+                                            if (id === 'Split') {
+                                                setSplitCash('');
+                                                setSplitUpi('');
+                                                setSplitCollectedCash('');
+                                            }
+                                        }}
                                         style={{
-                                            flex: 1, padding: '11px 8px', borderRadius: '12px', fontSize: '13px', fontWeight: 800,
+                                            flex: 1, padding: '11px 6px', borderRadius: '12px', fontSize: '12px', fontWeight: 800,
                                             background: paymentMode === id ? 'linear-gradient(135deg, var(--primary-glow) 0%, #ff5252 100%)' : 'rgba(255,255,255,0.06)',
                                             color: paymentMode === id ? 'white' : 'var(--text-muted)',
                                             border: paymentMode === id ? '1px solid rgba(255,47,146,0.5)' : '1px solid rgba(255,255,255,0.1)',
@@ -933,10 +1040,10 @@ export default function OutletPOS({ user }: { user: any }) {
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
-                                            gap: '6px'
+                                            gap: '5px'
                                         }}
                                     >
-                                        <Icon size={15} />
+                                        <Icon size={14} />
                                         <span>{label}</span>
                                     </button>
                                 ))}
@@ -1009,6 +1116,165 @@ export default function OutletPOS({ user }: { user: any }) {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {paymentMode === 'Split' && (
+                            <div style={{ 
+                                background: 'rgba(255,255,255,0.04)', 
+                                padding: '14px', 
+                                borderRadius: '14px', 
+                                border: '1px solid rgba(255,47,146,0.3)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '12px'
+                            }}>
+                                {/* Header & 50/50 Preset Button */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '11px', color: 'var(--accent-gold)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        Split: Cash + UPI
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handle5050Split}
+                                        className="pos-quick-cash-btn"
+                                        style={{ borderColor: 'var(--primary-glow)', color: 'var(--primary-glow)', padding: '3px 8px', fontSize: '10px' }}
+                                    >
+                                        50 / 50 Split
+                                    </button>
+                                </div>
+
+                                {/* Inputs for Cash and UPI */}
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <label className="pos-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <Banknote size={12} color="#4ade80" /> Cash (₹)
+                                        </label>
+                                        <input 
+                                            type="number" 
+                                            inputMode="decimal"
+                                            placeholder="e.g. 200" 
+                                            value={splitCash}
+                                            onChange={e => handleSplitCashChange(e.target.value)}
+                                            className="pos-input"
+                                            style={{ borderColor: splitCash !== '' ? 'rgba(74, 222, 128, 0.5)' : undefined }}
+                                        />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <label className="pos-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <Smartphone size={12} color="#00d2ff" /> UPI (₹)
+                                        </label>
+                                        <input 
+                                            type="number" 
+                                            inputMode="decimal"
+                                            placeholder="e.g. 300" 
+                                            value={splitUpi}
+                                            onChange={e => handleSplitUpiChange(e.target.value)}
+                                            className="pos-input"
+                                            style={{ borderColor: splitUpi !== '' ? 'rgba(0, 210, 255, 0.5)' : undefined }}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Real-time Summary Badge */}
+                                <div style={{ 
+                                    padding: '8px 10px', 
+                                    borderRadius: '8px', 
+                                    background: 'rgba(0,0,0,0.3)', 
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    fontSize: '11px',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center'
+                                }}>
+                                    {splitCash === '' && splitUpi === '' ? (
+                                        <span style={{ color: 'var(--text-muted)' }}>
+                                            Type Cash or UPI — the other calculates automatically.
+                                        </span>
+                                    ) : (
+                                        <>
+                                            <span style={{ color: 'var(--text-muted)' }}>
+                                                Total: <strong style={{ color: 'white' }}>₹{(parseFloat(splitCash || '0') + parseFloat(splitUpi || '0')).toFixed(2)}</strong> / ₹{total.toFixed(2)}
+                                            </span>
+                                            {Math.abs((parseFloat(splitCash || '0') + parseFloat(splitUpi || '0')) - total) < 0.05 ? (
+                                                <span style={{ color: '#4ade80', fontWeight: 800 }}>✓ BALANCED</span>
+                                            ) : (
+                                                <span style={{ color: '#f59e0b', fontWeight: 700 }}>
+                                                    DIFF: ₹{Math.abs(total - (parseFloat(splitCash || '0') + parseFloat(splitUpi || '0'))).toFixed(2)}
+                                                </span>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+
+                                {/* Cash Tender & Change calculation (shown if splitCash > 0) */}
+                                {parseFloat(splitCash) > 0 && (
+                                    <div style={{ borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: '10px', marginTop: '2px' }}>
+                                        <div style={{ marginBottom: '6px', fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                            Cash Received (₹{parseFloat(splitCash).toFixed(2)} Due)
+                                        </div>
+                                        <div className="pos-quick-cash-row">
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setSplitCollectedCash(Math.ceil(parseFloat(splitCash)).toString())} 
+                                                className="pos-quick-cash-btn"
+                                                style={{ borderColor: 'var(--primary-glow)', color: 'var(--primary-glow)' }}
+                                            >
+                                                Exact ₹{Math.ceil(parseFloat(splitCash))}
+                                            </button>
+                                            {[100, 200, 500, 1000, 2000].filter(amt => amt >= parseFloat(splitCash)).map(amt => (
+                                                <button 
+                                                    key={amt} 
+                                                    type="button" 
+                                                    onClick={() => setSplitCollectedCash(amt.toString())} 
+                                                    className="pos-quick-cash-btn"
+                                                >
+                                                    ₹{amt}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                                            <div style={{ flex: 1 }}>
+                                                <label className="pos-label">Tendered Cash (₹)</label>
+                                                <input 
+                                                    type="number" 
+                                                    inputMode="decimal"
+                                                    placeholder={`e.g. ${Math.ceil(parseFloat(splitCash))}`}
+                                                    value={splitCollectedCash}
+                                                    onChange={e => setSplitCollectedCash(e.target.value)}
+                                                    className="pos-input"
+                                                />
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <label className="pos-label">Change to Return</label>
+                                                <div style={{ 
+                                                    width: '100%', padding: '8px 12px', 
+                                                    background: splitCollectedCash && Number(splitCollectedCash) >= parseFloat(splitCash) ? 'rgba(34, 197, 94, 0.12)' : 'rgba(0,0,0,0.4)', 
+                                                    border: splitCollectedCash && Number(splitCollectedCash) >= parseFloat(splitCash) ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(255,255,255,0.15)', 
+                                                    borderRadius: '10px', 
+                                                    color: splitCollectedCash && Number(splitCollectedCash) >= parseFloat(splitCash) ? '#4ade80' : (splitCollectedCash && Number(splitCollectedCash) < parseFloat(splitCash) ? '#f59e0b' : 'var(--accent-gold)'), 
+                                                    fontSize: '15px', fontWeight: '900', display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                                                    height: '46px', boxSizing: 'border-box' 
+                                                }}>
+                                                    <span>
+                                                        ₹{splitCollectedCash && Number(splitCollectedCash) >= parseFloat(splitCash) ? (Number(splitCollectedCash) - parseFloat(splitCash)).toFixed(2) : '0.00'}
+                                                    </span>
+                                                    {splitCollectedCash && Number(splitCollectedCash) >= parseFloat(splitCash) && (
+                                                        <span style={{ fontSize: '9px', color: '#4ade80', fontWeight: 800 }}>
+                                                            CHANGE
+                                                        </span>
+                                                    )}
+                                                    {splitCollectedCash && Number(splitCollectedCash) < parseFloat(splitCash) && (
+                                                        <span style={{ fontSize: '9px', color: '#f59e0b', fontWeight: 700 }}>
+                                                            SHORT
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1238,12 +1504,43 @@ export default function OutletPOS({ user }: { user: any }) {
                                     <div style={{ fontSize: '12px', marginTop: '6px', paddingTop: '4px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
                                             <span>Payment Mode</span>
-                                            <span style={{ fontWeight: 800 }}>{lastOrder.payment_method === 'POS_CASH' ? 'CASH' : lastOrder.payment_method}</span>
+                                            <span style={{ fontWeight: 800 }}>
+                                                {lastOrder.payment_method === 'POS_CASH' 
+                                                    ? 'CASH' 
+                                                    : (lastOrder.payment_method === 'POS_SPLIT' ? 'SPLIT (CASH + UPI)' : lastOrder.payment_method)}
+                                            </span>
                                         </div>
+
+                                        {lastOrder.payment_method === 'POS_SPLIT' && (
+                                            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '6px', margin: '6px 0', border: '1px dashed #cbd5e1' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px', fontWeight: 700 }}>
+                                                    <span>💵 Cash Paid:</span>
+                                                    <span>₹{Number(lastOrder.metadata?.split_cash || 0).toFixed(2)}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                                                    <span>📱 UPI Paid:</span>
+                                                    <span>₹{Number(lastOrder.metadata?.split_upi || 0).toFixed(2)}</span>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {lastOrder.payment_method === 'POS_CASH' && lastOrder.collected_cash > 0 && (
                                             <>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
                                                     <span>Cash Collected</span>
+                                                    <span>₹{Number(lastOrder.collected_cash).toFixed(2)}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '13px', background: '#f0fdf4', padding: '3px 6px', borderRadius: '4px' }}>
+                                                    <span>Change Returned</span>
+                                                    <span>₹{Number(lastOrder.return_cash).toFixed(2)}</span>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {lastOrder.payment_method === 'POS_SPLIT' && lastOrder.collected_cash > (lastOrder.metadata?.split_cash || 0) && (
+                                            <>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                                    <span>Cash Tendered</span>
                                                     <span>₹{Number(lastOrder.collected_cash).toFixed(2)}</span>
                                                 </div>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '13px', background: '#f0fdf4', padding: '3px 6px', borderRadius: '4px' }}>

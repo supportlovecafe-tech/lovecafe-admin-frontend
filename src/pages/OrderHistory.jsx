@@ -244,11 +244,23 @@ export default function OrderHistory({ user }) {
                   </td>
                   <td>
                     <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--accent-gold)' }}>
-                      {order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
+                      {order.payment_method === 'POS_SPLIT' ? 'SPLIT' : order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
                     </span>
+                    {order.payment_method === 'POS_SPLIT' && order.metadata && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div>💵 Cash: ₹{order.metadata.split_cash ?? 0}</div>
+                        <div>📱 UPI: ₹{order.metadata.split_upi ?? 0}</div>
+                      </div>
+                    )}
                     {order.payment_method === 'POS_CASH' && order.collected_cash > 0 && (
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         <div>Collected: ₹{order.collected_cash}</div>
+                        <div>Return: ₹{order.return_cash}</div>
+                      </div>
+                    )}
+                    {order.payment_method === 'POS_SPLIT' && order.collected_cash > (order.metadata?.split_cash || 0) && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div>Tendered: ₹{order.collected_cash}</div>
                         <div>Return: ₹{order.return_cash}</div>
                       </div>
                     )}
