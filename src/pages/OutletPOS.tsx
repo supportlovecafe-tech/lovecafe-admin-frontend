@@ -560,18 +560,24 @@ export default function OutletPOS({ user }: { user: any }) {
             });
 
             if (!response.ok) {
-                let errData;
+                let errData: any = {};
                 const contentType = response.headers.get("content-type");
                 if (contentType && contentType.includes("application/json")) {
                     errData = await response.json();
                 } else {
                     const text = await response.text();
                     if (response.status === 403 && text.includes("Checking your browser")) {
-                        throw new Error('Hostinger Bot Protection is blocking the API request. Please disable it in hPanel.');
+                        alert('Hostinger Bot Protection is blocking the API request. Please disable it in hPanel.');
+                        setPlacingOrder(false);
+                        return;
                     }
-                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                    errData = { error: `Server returned ${response.status}: ${response.statusText}` };
                 }
-                throw new Error(errData.error || 'Failed to place order');
+                const errorMsg = errData.details || errData.error || 'Failed to place order';
+                console.error("Order API rejection:", errorMsg);
+                alert(`Order Placement Failed: ${errorMsg}`);
+                setPlacingOrder(false);
+                return;
             }
 
             const result = await response.json();
@@ -594,7 +600,7 @@ export default function OutletPOS({ user }: { user: any }) {
                 return;
             }
 
-            // OFFLINE OUTBOX PATTERN
+            // Genuinely offline or network disconnected
             const offlineOrder = {
                 ...orderData,
                 idempotencyKey,
@@ -610,7 +616,7 @@ export default function OutletPOS({ user }: { user: any }) {
             });
             setShowReceipt(true);
             setCart([]);
-            alert("POS is offline. Order has been saved locally and will sync when connection returns.");
+            alert("Network connection issue. Order has been saved locally and will sync when connection returns.");
         }
     } catch (e) {
         console.error("Failed to place outlet order:", e);
@@ -622,7 +628,6 @@ export default function OutletPOS({ user }: { user: any }) {
 
   const syncOutbox = async () => {
     if (outbox.length === 0 || isOffline) return;
-    setPlacingOrder(true);
     
     const remainingOutbox = [...outbox];
     const item = remainingOutbox[0];
@@ -637,13 +642,11 @@ export default function OutletPOS({ user }: { user: any }) {
             body: JSON.stringify(item)
         });
         
-        if (response.ok) {
+        if (response.ok || response.status === 409 || response.status === 400) {
             setOutbox(prev => prev.filter(i => i.idempotencyKey !== item.idempotencyKey));
         }
     } catch (e) {
         console.error("Sync failed for item:", item.idempotencyKey, e);
-    } finally {
-        setPlacingOrder(false);
     }
   };
 
