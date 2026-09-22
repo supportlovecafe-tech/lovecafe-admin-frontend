@@ -302,16 +302,30 @@ export default function OutletPOS({ user }: { user: any }) {
         return;
     }
 
+    // Immediate local optimistic breakdown so UI updates instantly with addons
+    const st = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const cgst = Math.round(st * 0.025 * 100) / 100;
+    const sgst = Math.round(st * 0.025 * 100) / 100;
+    setBreakdown((prev: any) => ({
+        ...prev,
+        subtotal: st,
+        cgst,
+        sgst,
+        total: Math.round((st + cgst + sgst + (prev?.platform_charges || 0)) * 100) / 100
+    }));
+
+    const activeCinemaId = (user?.cinema_id && user.cinema_id !== 'default') ? user.cinema_id : (user?.cinemaId || (foods[0]?.cinema_id || null));
+
     const validateCart = async () => {
         setIsValidating(true);
         try {
             const response = await fetch(`${API_BASE_URL}/api/orders/validate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: cart, cinema_id: user?.cinema_id, is_pos: true })
+                body: JSON.stringify({ items: cart, cinema_id: activeCinemaId, is_pos: true })
             });
             const data = await response.json();
-            if (data.success) {
+            if (data.success && data.breakdown) {
                 setBreakdown(data.breakdown);
             }
         } catch (e) {
@@ -337,7 +351,7 @@ export default function OutletPOS({ user }: { user: any }) {
 
     const timeout = setTimeout(validateCart, 300);
     return () => clearTimeout(timeout);
-  }, [cart]);
+  }, [cart, user?.cinema_id, user?.cinemaId, foods]);
 
   const { subtotal, cgst, sgst, platform_charges, total } = breakdown;
 
@@ -485,7 +499,8 @@ export default function OutletPOS({ user }: { user: any }) {
         const displayId = `OUTLET-${shortTime}`;
         
         const itemsJson = cart.map(item => ({
-            food_id: item.is_combo ? null : item.id,
+            id: item.is_combo ? (item.combo_id || item.id) : (item.food_id || item.id),
+            food_id: item.is_combo ? null : (item.food_id || item.id),
             food_name: item.name,
             food_price: item.price,
             food_image: item.image_url,
@@ -496,8 +511,8 @@ export default function OutletPOS({ user }: { user: any }) {
             item_note: item.note || null,
             addons: item.addons || [],
             is_combo: item.is_combo || false,
-            combo_id: item.is_combo ? item.id : null,
-            combo_name: item.is_combo ? item.name : null,
+            combo_id: item.is_combo ? (item.combo_id || item.id) : null,
+            combo_name: item.is_combo ? (item.combo_name || item.name) : null,
             apply_gst: item.apply_gst
         }));
 
