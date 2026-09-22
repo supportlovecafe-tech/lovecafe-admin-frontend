@@ -326,7 +326,22 @@ export default function OutletPOS({ user }: { user: any }) {
             });
             const data = await response.json();
             if (data.success && data.breakdown) {
-                setBreakdown(data.breakdown);
+                // Safeguard: Ensure cart subtotal with addons is never downgraded by server breakdown
+                const localSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                if (data.breakdown.subtotal < localSubtotal) {
+                    const diff = localSubtotal - data.breakdown.subtotal;
+                    const extraCgst = Math.round(diff * 0.025 * 100) / 100;
+                    const extraSgst = Math.round(diff * 0.025 * 100) / 100;
+                    setBreakdown({
+                        ...data.breakdown,
+                        subtotal: localSubtotal,
+                        cgst: Math.round((data.breakdown.cgst + extraCgst) * 100) / 100,
+                        sgst: Math.round((data.breakdown.sgst + extraSgst) * 100) / 100,
+                        total: Math.round((data.breakdown.total + diff + extraCgst + extraSgst) * 100) / 100
+                    });
+                } else {
+                    setBreakdown(data.breakdown);
+                }
             }
         } catch (e) {
             console.error("Local validation fallback (Offline):", e);
