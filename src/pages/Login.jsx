@@ -52,6 +52,20 @@ export default function Login({ onLogin }) {
           onLogin({ ...profile, email: data.user.email });
           return;
         }
+
+        // 1b. Check if Staff Profile with Cinema ID
+        if (profile && profile.cinema_id) {
+          const { data: staffCinema } = await supabase
+            .from('cinemas')
+            .select('id, name, is_active, status')
+            .eq('id', profile.cinema_id)
+            .single();
+
+          if (staffCinema && (staffCinema.is_active === false || staffCinema.status === 'INACTIVE')) {
+            await supabase.auth.signOut().catch(() => {});
+            throw new Error(`This outlet (${staffCinema.name}) is currently in Service Mode. Staff login is disabled.`);
+          }
+        }
         
         // 2. Check if Outlet Manager
         const { data: cinema } = await supabase
@@ -61,6 +75,10 @@ export default function Login({ onLogin }) {
           .single();
           
         if (cinema) {
+          if (cinema.is_active === false || cinema.status === 'INACTIVE') {
+            await supabase.auth.signOut().catch(() => {});
+            throw new Error(`This outlet (${cinema.name}) is currently in Service Mode. Login is disabled.`);
+          }
           setMatchedCinema(cinema);
           setPinStep(true);
           setLoading(false);
@@ -83,6 +101,11 @@ export default function Login({ onLogin }) {
     e?.preventDefault();
     if (!pin || pin.length < 4) {
       setError('Please enter your 4-digit PIN.');
+      return;
+    }
+
+    if (matchedCinema && (matchedCinema.is_active === false || matchedCinema.status === 'INACTIVE')) {
+      setError(`This outlet (${matchedCinema.name}) is currently in Service Mode. Login is disabled.`);
       return;
     }
 

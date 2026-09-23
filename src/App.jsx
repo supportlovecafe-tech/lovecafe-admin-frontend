@@ -24,15 +24,36 @@ function App() {
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Check for persisted session in localStorage
+  // Check for persisted session in localStorage and verify outlet active status
   useEffect(() => {
-    const saved = localStorage.getItem('ce_admin_profile')
-    if (saved) {
-      try {
-        setUserProfile(JSON.parse(saved))
-      } catch (_) {}
+    const checkSession = async () => {
+      const saved = localStorage.getItem('ce_admin_profile')
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (parsed && parsed.role !== 'SUPER_ADMIN' && parsed.cinema_id) {
+            const { data: cinema } = await supabase
+              .from('cinemas')
+              .select('id, name, is_active, status')
+              .eq('id', parsed.cinema_id)
+              .maybeSingle()
+
+            if (cinema && (cinema.is_active === false || cinema.status === 'INACTIVE')) {
+              localStorage.removeItem('ce_admin_profile')
+              await supabase.auth.signOut().catch(() => {})
+              setUserProfile(null)
+              alert(`Notice: ${cinema.name || 'This outlet'} is currently in Service Mode. Access is disabled.`)
+              setLoading(false)
+              return
+            }
+          }
+          setUserProfile(parsed)
+        } catch (_) {}
+      }
+      setLoading(false)
     }
-    setLoading(false)
+
+    checkSession()
   }, [])
 
   const handleLogin = (profile) => {
@@ -45,6 +66,35 @@ function App() {
     supabase.auth.signOut().catch(() => {})
     setUserProfile(null)
   }
+
+  // Realtime subscription: if active outlet is deactivated by Super Admin, log out immediately
+  useEffect(() => {
+    if (!userProfile || userProfile.role === 'SUPER_ADMIN' || !userProfile.cinema_id) return
+
+    const channel = supabase
+      .channel(`cinema_active_guard_${userProfile.cinema_id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'cinemas',
+          filter: `id=eq.${userProfile.cinema_id}`
+        },
+        (payload) => {
+          const updated = payload.new
+          if (updated && (updated.is_active === false || updated.status === 'INACTIVE')) {
+            alert(`Notice: Outlet (${updated.name || 'Current Outlet'}) has been switched to Service Mode. You have been logged out.`)
+            handleLogout()
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [userProfile?.cinema_id, userProfile?.role])
 
   if (loading) {
     return (
