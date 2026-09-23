@@ -1,13 +1,15 @@
-import {  useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
-import { Plus, MapPin, Film, Star, Edit2, Trash2, Image as ImageIcon, Save, X, Search, Upload, Loader2 } from 'lucide-react';
+import { Plus, MapPin, Film, Star, Edit2, Trash2, Image as ImageIcon, Save, X, Search, Upload, Loader2, Power, CheckCircle2, AlertTriangle, Activity } from 'lucide-react';
 
 export default function OutletsManager() {
   const [cinemas, setCinemas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
+  const [actionToast, setActionToast] = useState(null);
   
   // Form State (Side Panel)
   const [isEditing, setIsEditing] = useState(false);
@@ -20,7 +22,8 @@ export default function OutletsManager() {
     screens: [],
     loginEmail: '',
     loginPassword: '',
-    outletNumber: ''
+    outletNumber: '',
+    isActive: true
   });
   const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
 
@@ -41,7 +44,7 @@ export default function OutletsManager() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', location: '', feature: '', imageUrl: '', screens: [], loginEmail: '', loginPassword: '', outletNumber: '' });
+    setFormData({ name: '', location: '', feature: '', imageUrl: '', screens: [], loginEmail: '', loginPassword: '', outletNumber: '', isActive: true });
     setIsEditing(false);
     setCurrentId(null);
   };
@@ -55,10 +58,45 @@ export default function OutletsManager() {
         screens: cinema.screens || [],
         loginEmail: cinema.login_email || '',
         loginPassword: '',
-        outletNumber: cinema.outlet_number || ''
+        outletNumber: cinema.outlet_number || '',
+        isActive: cinema.is_active !== false
     });
     setIsEditing(true);
     setCurrentId(cinema.id);
+  };
+
+  const handleToggleStatus = async (cinema, e) => {
+    if (e) e.stopPropagation();
+    const currentIsActive = cinema.is_active !== false;
+    const newStatus = !currentIsActive;
+    
+    // Optimistic UI update
+    setCinemas(prev => prev.map(c => c.id === cinema.id ? { ...c, is_active: newStatus, status: newStatus ? 'ACTIVE' : 'INACTIVE' } : c));
+    
+    const toastMsg = newStatus 
+      ? `🟢 "${cinema.name}" is now ACTIVE (Accepting Orders)` 
+      : `🟠 "${cinema.name}" is now in SERVICE MODE (Orders Paused)`;
+    setActionToast(toastMsg);
+    setTimeout(() => setActionToast(null), 3500);
+
+    try {
+      const { error } = await supabase
+        .from('cinemas')
+        .update({ 
+          is_active: newStatus,
+          status: newStatus ? 'ACTIVE' : 'INACTIVE'
+        })
+        .eq('id', cinema.id);
+        
+      if (error) {
+        console.error('Failed to update outlet status:', error);
+        alert('Failed to update status: ' + error.message);
+        fetchCinemas();
+      }
+    } catch (err) {
+      console.error('Error toggling status:', err);
+      fetchCinemas();
+    }
   };
 
   const handleAddScreen = () => {
@@ -153,7 +191,9 @@ export default function OutletsManager() {
     if (isEditing) {
         const { error } = await supabase.from('cinemas').update({ 
             name: formData.name, location: formData.location, feature: formData.feature, image_url: formData.imageUrl,
-            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null
+            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null,
+            is_active: formData.isActive !== false,
+            status: formData.isActive !== false ? 'ACTIVE' : 'INACTIVE'
         }).eq('id', currentId);
         
         if (error) alert(error.message);
@@ -201,7 +241,9 @@ export default function OutletsManager() {
 
         const { data: cinema, error: cinemaErr } = await supabase.from('cinemas').insert([{ 
             name: formData.name, location: formData.location, feature: formData.feature, image_url: formData.imageUrl,
-            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null
+            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null,
+            is_active: formData.isActive !== false,
+            status: formData.isActive !== false ? 'ACTIVE' : 'INACTIVE'
         }]).select().single();
 
         if (cinemaErr) alert(cinemaErr.message);
@@ -234,10 +276,17 @@ export default function OutletsManager() {
     setLoading(false);
   };
 
-  const filteredCinemas = cinemas.filter(c => 
-    c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    c.location?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredCinemas = cinemas.filter(c => {
+    const matchesSearch = c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      c.location?.toLowerCase().includes(searchTerm.toLowerCase());
+    const isActive = c.is_active !== false;
+    if (statusFilter === 'ACTIVE') return matchesSearch && isActive;
+    if (statusFilter === 'INACTIVE') return matchesSearch && !isActive;
+    return matchesSearch;
+  });
+
+  const activeCount = cinemas.filter(c => c.is_active !== false).length;
+  const inactiveCount = cinemas.filter(c => c.is_active === false).length;
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '32px', height: 'calc(100vh - 120px)' }}>
@@ -250,58 +299,201 @@ export default function OutletsManager() {
 
       <div className="dashboard-grid" style={{ display: 'flex', gap: '32px', flex: 1, minHeight: 0 }}>
         
-        {/* Left: Search & Cards */}
-        <div style={{ flex: 1.8, display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div className="glass-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-               <Search size={20} color="rgba(255,255,255,0.2)" />
-               <input 
-                  type="text" 
-                  placeholder="Search by outlet name or location..." 
-                  style={{ background: 'transparent', border: 'none', color: 'white', flex: 1, fontSize: '14px', outline: 'none' }}
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-               />
+        {/* Left: Search, Filters & Cards */}
+        <div style={{ flex: 1.8, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {actionToast && (
+                <div style={{
+                    padding: '12px 20px',
+                    borderRadius: '12px',
+                    background: 'rgba(20, 20, 25, 0.95)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                    color: 'white',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                }}>
+                    <span>{actionToast}</span>
+                    <button onClick={() => setActionToast(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 4 }}><X size={16} /></button>
+                </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <div className="glass-card" style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '16px', flex: 1, minWidth: '240px' }}>
+                   <Search size={18} color="rgba(255,255,255,0.25)" />
+                   <input 
+                      type="text" 
+                      placeholder="Search by outlet name or location..." 
+                      style={{ background: 'transparent', border: 'none', color: 'white', flex: 1, fontSize: '14px', outline: 'none' }}
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                   />
+                </div>
+
+                {/* Status Filter Buttons */}
+                <div style={{ display: 'flex', gap: '8px', background: 'rgba(255,255,255,0.03)', padding: '4px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <button
+                        type="button"
+                        onClick={() => setStatusFilter('ALL')}
+                        style={{
+                            padding: '8px 14px',
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            fontWeight: '800',
+                            border: 'none',
+                            cursor: 'pointer',
+                            background: statusFilter === 'ALL' ? 'var(--primary-glow)' : 'transparent',
+                            color: statusFilter === 'ALL' ? 'white' : 'var(--text-secondary)',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        All ({cinemas.length})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setStatusFilter('ACTIVE')}
+                        style={{
+                            padding: '8px 14px',
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            fontWeight: '800',
+                            border: 'none',
+                            cursor: 'pointer',
+                            background: statusFilter === 'ACTIVE' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                            color: statusFilter === 'ACTIVE' ? '#10b981' : 'var(--text-secondary)',
+                            outline: statusFilter === 'ACTIVE' ? '1px solid rgba(16, 185, 129, 0.4)' : 'none',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        🟢 Active ({activeCount})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setStatusFilter('INACTIVE')}
+                        style={{
+                            padding: '8px 14px',
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            fontWeight: '800',
+                            border: 'none',
+                            cursor: 'pointer',
+                            background: statusFilter === 'INACTIVE' ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
+                            color: statusFilter === 'INACTIVE' ? '#f59e0b' : 'var(--text-secondary)',
+                            outline: statusFilter === 'INACTIVE' ? '1px solid rgba(245, 158, 11, 0.4)' : 'none',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        🟠 Service Mode ({inactiveCount})
+                    </button>
+                </div>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '12px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
-                    {filteredCinemas.map(cinema => (
-                        <div key={cinema.id} className="glass-card hover-card" style={{ overflow: 'hidden' }}>
+                    {filteredCinemas.map(cinema => {
+                        const isActive = cinema.is_active !== false;
+                        return (
+                        <div key={cinema.id} className="glass-card hover-card" style={{ 
+                            overflow: 'hidden',
+                            border: !isActive ? '1px solid rgba(245, 158, 11, 0.4)' : undefined,
+                            boxShadow: !isActive ? '0 0 20px rgba(245, 158, 11, 0.08)' : undefined,
+                            transition: 'all 0.3s ease'
+                        }}>
                             <div style={{ height: '160px', position: 'relative', background: 'var(--surface-container-high)' }}>
                                 <img 
                                   src={cinema.image_url ? cinema.image_url : 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400'} 
                                   alt={cinema.name} 
-                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover', filter: !isActive ? 'grayscale(0.35)' : undefined }} 
                                   onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400'; }}
                                 />
+                                {/* Top-Left Status Pill */}
+                                <div style={{ position: 'absolute', top: 12, left: 12 }}>
+                                    <span style={{
+                                        padding: '4px 10px',
+                                        borderRadius: '12px',
+                                        fontSize: '10px',
+                                        fontWeight: '900',
+                                        letterSpacing: '0.5px',
+                                        background: isActive ? 'rgba(0, 0, 0, 0.75)' : 'rgba(245, 158, 11, 0.95)',
+                                        color: isActive ? '#10b981' : '#000',
+                                        backdropFilter: 'blur(8px)',
+                                        border: isActive ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(0,0,0,0.2)',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}>
+                                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: isActive ? '#10b981' : '#000' }} />
+                                        {isActive ? 'ONLINE' : 'SERVICE MODE'}
+                                    </span>
+                                </div>
                                 <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: '8px' }}>
                                     <button onClick={() => handleOpenEdit(cinema)} style={{ background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', cursor: 'pointer' }}><Edit2 size={16} /></button>
                                     <button onClick={() => setDeleteConfirmationId(cinema.id)} style={{ background: 'rgba(211,47,47,0.6)', color: 'white', border: 'none', padding: '8px', borderRadius: '8px', cursor: 'pointer' }}><Trash2 size={16} /></button>
                                 </div>
                             </div>
                             <div style={{ padding: '20px' }}>
-                                <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{cinema.name}</h3>
-                                {cinema.outlet_number && (
-                                    <div style={{ fontSize: '12px', color: 'var(--accent-gold)', fontWeight: 'bold', marginTop: '2px' }}>
-                                        Outlet #{cinema.outlet_number}
-                                    </div>
-                                )}
-                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{cinema.name}</h3>
+                                    {cinema.outlet_number && (
+                                        <div style={{ fontSize: '11px', color: 'var(--accent-gold)', fontWeight: 'bold', background: 'rgba(255,215,0,0.08)', padding: '2px 8px', borderRadius: '6px' }}>
+                                            #{cinema.outlet_number}
+                                        </div>
+                                    )}
+                                </div>
+                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
                                     <MapPin size={14} /> {cinema.location}
                                 </div>
                                 {cinema.login_email && (
                                     <div style={{ marginTop: '12px', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                        <div style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.25)', marginBottom: '6px', fontWeight: '800' }}>Outlet Login</div>
+                                        <div style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.25)', marginBottom: '4px', fontWeight: '800' }}>Outlet Login</div>
                                         <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{cinema.login_email}</div>
                                     </div>
                                 )}
-                                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     <span style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}>{cinema.screens?.length || 0} Screens</span>
                                     {cinema.feature && <span style={{ background: 'rgba(255,47,146,0.1)', color: 'var(--primary-red)', padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}>{cinema.feature}</span>}
                                 </div>
+
+                                {/* 1-Click Operational Status Toggle Button */}
+                                <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>Operational Status</span>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => handleToggleStatus(cinema, e)}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '6px 14px',
+                                            borderRadius: '20px',
+                                            fontSize: '11px',
+                                            fontWeight: '900',
+                                            letterSpacing: '0.5px',
+                                            border: isActive ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)',
+                                            background: isActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                            color: isActive ? '#10b981' : '#f59e0b',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                            boxShadow: isActive ? '0 0 12px rgba(16, 185, 129, 0.2)' : '0 0 12px rgba(245, 158, 11, 0.2)'
+                                        }}
+                                        title={isActive ? "Click to set to Service Mode (Pause Orders)" : "Click to set to Active (Accept Orders)"}
+                                    >
+                                        <span style={{
+                                            width: '8px',
+                                            height: '8px',
+                                            borderRadius: '50%',
+                                            background: isActive ? '#10b981' : '#f59e0b',
+                                            boxShadow: isActive ? '0 0 8px #10b981' : '0 0 8px #f59e0b'
+                                        }} />
+                                        {isActive ? 'ACTIVE' : 'SERVICE MODE'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </div>
@@ -426,6 +618,65 @@ export default function OutletsManager() {
                             <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Login Password {isEditing && <span style={{ textTransform: 'none', fontWeight: 'normal', color: 'var(--text-secondary)' }}>(leave blank to keep current)</span>}</label>
                             <input type="text" className="input-premium" placeholder="Set a secure password..." value={formData.loginPassword} onChange={e => setFormData({...formData, loginPassword: e.target.value})} />
                         </div>
+                    </div>
+
+                    <div style={{ 
+                        borderTop: '1px solid rgba(255,255,255,0.08)', 
+                        padding: '16px',
+                        borderRadius: '12px',
+                        background: formData.isActive ? 'rgba(16, 185, 129, 0.05)' : 'rgba(245, 158, 11, 0.05)',
+                        border: formData.isActive ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(245, 158, 11, 0.2)',
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between',
+                        marginTop: '4px'
+                    }}>
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>Operational Status</span>
+                                <span style={{
+                                    fontSize: '10px',
+                                    padding: '2px 8px',
+                                    borderRadius: '10px',
+                                    fontWeight: '900',
+                                    background: formData.isActive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                                    color: formData.isActive ? '#10b981' : '#f59e0b'
+                                }}>
+                                    {formData.isActive ? 'ACTIVE' : 'SERVICE MODE'}
+                                </span>
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                {formData.isActive ? 'Visible to customers & accepting orders' : 'Hidden from customers & orders paused'}
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, isActive: !prev.isActive }))}
+                            style={{
+                                width: '48px',
+                                height: '26px',
+                                borderRadius: '13px',
+                                background: formData.isActive ? '#10b981' : 'rgba(255,255,255,0.2)',
+                                border: 'none',
+                                cursor: 'pointer',
+                                position: 'relative',
+                                transition: 'background-color 0.2s',
+                                padding: 0
+                            }}
+                            title={formData.isActive ? "Switch to Service Mode" : "Switch to Active"}
+                        >
+                            <span style={{
+                                position: 'absolute',
+                                top: '3px',
+                                left: formData.isActive ? '25px' : '3px',
+                                width: '20px',
+                                height: '20px',
+                                borderRadius: '50%',
+                                background: 'white',
+                                transition: 'left 0.2s ease',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                            }} />
+                        </button>
                     </div>
 
                     <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>

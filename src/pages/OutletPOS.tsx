@@ -534,7 +534,7 @@ export default function OutletPOS({ user }: { user: any }) {
         const isSplit = paymentMode === 'Split';
         const actualCollectedCash = isSplit
             ? (splitCollectedCash ? (parseFloat(splitCollectedCash) || 0) : numSplitCash)
-            : (paymentMode === 'Cash' ? (Number(collectedCash) || 0) : 0);
+            : (paymentMode === 'Cash' ? (collectedCash ? (Number(collectedCash) || 0) : total) : 0);
         const actualReturnCash = isSplit
             ? Math.max(0, actualCollectedCash - numSplitCash)
             : (paymentMode === 'Cash' ? Math.max(0, actualCollectedCash - total) : 0);
@@ -566,6 +566,8 @@ export default function OutletPOS({ user }: { user: any }) {
                 staff_code: user?.employee_code || user?.employeeCode || null,
                 staff_name: user?.full_name || user?.name || null,
                 staff_email: user?.email,
+                collected_cash: actualCollectedCash,
+                return_cash: actualReturnCash,
                 ...(isSplit ? {
                     split_payment: true,
                     split_cash: numSplitCash,
@@ -1588,15 +1590,15 @@ export default function OutletPOS({ user }: { user: any }) {
                                             </div>
                                         )}
 
-                                        {lastOrder.payment_method === 'POS_CASH' && lastOrder.collected_cash > 0 && (
+                                        {lastOrder.payment_method === 'POS_CASH' && (
                                             <>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
                                                     <span>Cash Collected</span>
-                                                    <span>₹{Number(lastOrder.collected_cash).toFixed(2)}</span>
+                                                    <span>₹{Number(lastOrder.collected_cash || lastOrder.total_amount).toFixed(2)}</span>
                                                 </div>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '13px', background: '#f0fdf4', padding: '3px 6px', borderRadius: '4px' }}>
                                                     <span>Change Returned</span>
-                                                    <span>₹{Number(lastOrder.return_cash).toFixed(2)}</span>
+                                                    <span>₹{Number(lastOrder.return_cash || 0).toFixed(2)}</span>
                                                 </div>
                                             </>
                                         )}

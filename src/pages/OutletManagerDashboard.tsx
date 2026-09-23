@@ -803,6 +803,24 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
   const displayOrderId = order.display_id || order.id?.substring(0,6).toUpperCase();
   const customerName = order.customer_profiles ? `${order.customer_profiles.first_name} ${order.customer_profiles.last_name}` : 'Demo Customer';
 
+  const isPosCash = order.payment_method === 'POS_CASH';
+  const isPosSplit = order.payment_method === 'POS_SPLIT';
+  const isCash = isPosCash || isPosSplit || order.payment_method === 'CASH';
+
+  // Compute collected and returned amounts
+  const rawCollected = (order as any).collected_cash ?? order.metadata?.collected_cash ?? (isPosSplit ? order.metadata?.split_collected_cash : undefined);
+  const rawReturn = (order as any).return_cash ?? order.metadata?.return_cash ?? (isPosSplit ? order.metadata?.split_return_cash : undefined);
+
+  const collectedAmt = rawCollected !== undefined && rawCollected !== null && Number(rawCollected) > 0 
+    ? Number(rawCollected) 
+    : (isPosCash ? order.total_amount : 0);
+  const returnedAmt = rawReturn !== undefined && rawReturn !== null 
+    ? Number(rawReturn) 
+    : 0;
+
+  const showCashInfo = isCash && (collectedAmt > 0 || returnedAmt > 0);
+  const cashDifference = collectedAmt - returnedAmt;
+
   return (
     <div 
       className={`glass-card kds-order-card ${urgency.className}`} 
@@ -866,6 +884,48 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
           </button>
         </div>
       </div>
+
+      {/* POS Cash Collected, Returned & Diff (Bill) Strip */}
+      {showCashInfo && (
+        <div style={{
+          background: 'rgba(34, 197, 94, 0.08)',
+          border: '1px solid rgba(34, 197, 94, 0.25)',
+          borderRadius: '8px',
+          padding: '6px 10px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '3px',
+          width: '100%',
+          boxSizing: 'border-box'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+            <span style={{ color: 'var(--text-muted)' }}>
+              Collected: <strong style={{ color: '#ffffff' }}>₹{collectedAmt.toFixed(2)}</strong>
+            </span>
+            <span style={{ 
+              color: returnedAmt > 0 ? '#4ade80' : 'var(--text-muted)', 
+              fontWeight: 800,
+              background: returnedAmt > 0 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255,255,255,0.05)',
+              padding: '1px 6px',
+              borderRadius: '4px'
+            }}>
+              Returned: ₹{returnedAmt.toFixed(2)}
+            </span>
+          </div>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            fontSize: '10.5px', 
+            borderTop: '1px dashed rgba(255,255,255,0.1)', 
+            paddingTop: '3px',
+            color: 'var(--accent-gold)'
+          }}>
+            <span>Diff (Total Bill):</span>
+            <span style={{ fontWeight: 900 }}>₹{cashDifference.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
 
       {showUser && (
         <div className="animate-in fade-in" style={{ background: 'var(--card-gradient)', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,179,106,0.2)', display: 'flex', flexDirection: 'column', gap: '4px' }}>

@@ -369,6 +369,24 @@ export default function OrderHistory({ user }) {
               ) : orders.map(order => {
                 const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
                 const date = new Date(order.timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+                
+                const isPosCash = order.payment_method === 'POS_CASH';
+                const isPosSplit = order.payment_method === 'POS_SPLIT';
+                const isCashOrder = isPosCash || isPosSplit || order.payment_method === 'CASH';
+
+                const rawCollected = order.collected_cash ?? order.metadata?.collected_cash ?? (isPosSplit ? order.metadata?.split_collected_cash : undefined);
+                const rawReturn = order.return_cash ?? order.metadata?.return_cash ?? (isPosSplit ? order.metadata?.split_return_cash : undefined);
+
+                const collectedAmt = rawCollected !== undefined && rawCollected !== null && Number(rawCollected) > 0 
+                  ? Number(rawCollected) 
+                  : (isPosCash ? order.total_amount : 0);
+                const returnedAmt = rawReturn !== undefined && rawReturn !== null 
+                  ? Number(rawReturn) 
+                  : 0;
+
+                const showCashInfo = isCashOrder && (collectedAmt > 0 || returnedAmt > 0);
+                const cashDifference = collectedAmt - returnedAmt;
+
                 return (
                   <tr key={order.id}>
                     <td>
@@ -402,17 +420,35 @@ export default function OrderHistory({ user }) {
                       </span>
                       {order.payment_method === 'POS_SPLIT' && order.metadata && (
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <div>💵 Cash: ₹{order.metadata.split_cash ?? 0}</div>
-                          <div>📱 UPI: ₹{order.metadata.split_upi ?? 0}</div>
-                          {order.collected_cash > (order.metadata?.split_cash || 0) && (
-                            <div style={{ color: '#4ade80' }}>Ret: ₹{order.return_cash}</div>
-                          )}
+                          <div>💵 Cash Portion: ₹{order.metadata.split_cash ?? 0}</div>
+                          <div>📱 UPI Portion: ₹{order.metadata.split_upi ?? 0}</div>
                         </div>
                       )}
-                      {order.payment_method === 'POS_CASH' && order.collected_cash > 0 && (
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                          <div>Coll: ₹{order.collected_cash}</div>
-                          <div>Ret: ₹{order.return_cash}</div>
+                      {showCashInfo && (
+                        <div style={{ 
+                          marginTop: '6px', 
+                          padding: '6px 8px', 
+                          borderRadius: '6px', 
+                          background: 'rgba(34, 197, 94, 0.08)', 
+                          border: '1px solid rgba(34, 197, 94, 0.2)',
+                          fontSize: '11px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '2px',
+                          minWidth: '135px'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>Collected:</span>
+                            <span style={{ color: 'white', fontWeight: 'bold' }}>₹{collectedAmt.toFixed(2)}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>Returned:</span>
+                            <span style={{ color: returnedAmt > 0 ? '#4ade80' : 'var(--text-muted)', fontWeight: 'bold' }}>₹{returnedAmt.toFixed(2)}</span>
+                          </div>
+                          <div style={{ borderTop: '1px dashed rgba(255,255,255,0.1)', marginTop: '2px', paddingTop: '2px', color: 'var(--accent-gold)', display: 'flex', justifyContent: 'space-between', gap: '8px', fontWeight: 'bold' }}>
+                            <span>Diff (Bill):</span>
+                            <span>₹{cashDifference.toFixed(2)}</span>
+                          </div>
                         </div>
                       )}
                     </td>
@@ -442,6 +478,24 @@ export default function OrderHistory({ user }) {
             const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
             const date = new Date(order.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
             const sc = getStatusColor(order.status);
+
+            const isPosCash = order.payment_method === 'POS_CASH';
+            const isPosSplit = order.payment_method === 'POS_SPLIT';
+            const isCashOrder = isPosCash || isPosSplit || order.payment_method === 'CASH';
+
+            const rawCollected = order.collected_cash ?? order.metadata?.collected_cash ?? (isPosSplit ? order.metadata?.split_collected_cash : undefined);
+            const rawReturn = order.return_cash ?? order.metadata?.return_cash ?? (isPosSplit ? order.metadata?.split_return_cash : undefined);
+
+            const collectedAmt = rawCollected !== undefined && rawCollected !== null && Number(rawCollected) > 0 
+              ? Number(rawCollected) 
+              : (isPosCash ? order.total_amount : 0);
+            const returnedAmt = rawReturn !== undefined && rawReturn !== null 
+              ? Number(rawReturn) 
+              : 0;
+
+            const showCashInfo = isCashOrder && (collectedAmt > 0 || returnedAmt > 0);
+            const cashDifference = collectedAmt - returnedAmt;
+
             return (
               <div key={order.id} className="oh-order-card" style={{ borderLeft: `3px solid ${sc}` }}>
                 <div className="oh-card-top">
@@ -485,18 +539,43 @@ export default function OrderHistory({ user }) {
 
                 {order.payment_method === 'POS_SPLIT' && order.metadata && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '11px', color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-                    <span>💵 Cash: ₹{order.metadata.split_cash ?? 0}</span>
-                    <span>📱 UPI: ₹{order.metadata.split_upi ?? 0}</span>
-                    {order.collected_cash > (order.metadata?.split_cash || 0) && (
-                      <span style={{ color: '#4ade80' }}>Change Ret: ₹{order.return_cash}</span>
-                    )}
+                    <span>💵 Cash Portion: ₹{order.metadata.split_cash ?? 0}</span>
+                    <span>📱 UPI Portion: ₹{order.metadata.split_upi ?? 0}</span>
                   </div>
                 )}
 
-                {order.payment_method === 'POS_CASH' && order.collected_cash > 0 && (
-                  <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-                    <span>Collected: ₹{order.collected_cash}</span>
-                    <span>Return: ₹{order.return_cash}</span>
+                {showCashInfo && (
+                  <div style={{ 
+                    marginTop: '8px', 
+                    padding: '8px 10px', 
+                    background: 'rgba(34, 197, 94, 0.08)', 
+                    border: '1px solid rgba(34, 197, 94, 0.2)', 
+                    borderRadius: '8px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    fontSize: '11px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        Collected: <strong style={{ color: 'white' }}>₹{collectedAmt.toFixed(2)}</strong>
+                      </span>
+                      <span style={{ color: returnedAmt > 0 ? '#4ade80' : 'var(--text-muted)', fontWeight: 'bold' }}>
+                        Returned: ₹{returnedAmt.toFixed(2)}
+                      </span>
+                    </div>
+                    <div style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center', 
+                      borderTop: '1px dashed rgba(255,255,255,0.1)', 
+                      paddingTop: '3px',
+                      color: 'var(--accent-gold)',
+                      fontWeight: 'bold'
+                    }}>
+                      <span>Diff (Total Bill):</span>
+                      <span>₹{cashDifference.toFixed(2)}</span>
+                    </div>
                   </div>
                 )}
               </div>
