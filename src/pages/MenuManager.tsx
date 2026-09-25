@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
-import { Plus, Coffee, Tag, DollarSign, Image as ImageIcon, Search, Trash2, Edit2, CheckCircle, X, Upload, Loader2, Download } from 'lucide-react';
+import { Plus, Coffee, Tag, DollarSign, Image as ImageIcon, Search, Trash2, Edit2, CheckCircle, X, Upload, Loader2, Download, Settings, Check, AlertCircle } from 'lucide-react';
 import { Database } from '../lib/database.types';
 
 type FoodItem = Database['public']['Tables']['food_items']['Row'] & {
@@ -26,6 +26,48 @@ interface CategoryItem {
   section: 'READY_FOOD' | 'KITCHEN_FOOD';
 }
 
+export function extractEmojiAndName(label: string): { emoji: string; name: string } {
+  const trimmed = (label || '').trim();
+  const match = trimmed.match(/^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\u200d|[❤️🌟🍿🥛🥤🍦🧃🧀🍟🥪🍔🍗🌯🌮🥟🍚🍜🍝🍕☕🥗🍩🍫])+\s*/u);
+  if (match) {
+    const emoji = match[0].trim();
+    const name = trimmed.slice(match[0].length).trim();
+    return { emoji: emoji || '🍽️', name: name || trimmed };
+  }
+  
+  const lower = trimmed.toLowerCase();
+  let emoji = '🍽️';
+  if (lower.includes('nacho')) emoji = '🧀';
+  else if (lower.includes('boba') || lower.includes('bubble')) emoji = '🧋';
+  else if (lower.includes('popcorn')) emoji = '🍿';
+  else if (lower.includes('burger')) emoji = '🍔';
+  else if (lower.includes('pizza')) emoji = '🍕';
+  else if (lower.includes('lassi')) emoji = '🥛';
+  else if (lower.includes('shake')) emoji = '🥤';
+  else if (lower.includes('ice') || lower.includes('cream')) emoji = '🍦';
+  else if (lower.includes('drink') || lower.includes('beverage') || lower.includes('juice') || lower.includes('water')) emoji = '🧃';
+  else if (lower.includes('tea') || lower.includes('chai') || lower.includes('coffee')) emoji = '☕';
+  else if (lower.includes('snack')) emoji = '🍟';
+  else if (lower.includes('sandwich')) emoji = '🥪';
+  else if (lower.includes('taco')) emoji = '🌮';
+  else if (lower.includes('wrap')) emoji = '🌯';
+  else if (lower.includes('momo') || lower.includes('dimsum')) emoji = '🥟';
+  else if (lower.includes('noodle')) emoji = '🍜';
+  else if (lower.includes('rice')) emoji = '🍚';
+  else if (lower.includes('pasta')) emoji = '🍝';
+  else if (lower.includes('tikka') || lower.includes('chicken')) emoji = '🍗';
+  else if (lower.includes('dessert') || lower.includes('sweet') || lower.includes('cake')) emoji = '🍰';
+
+  const name = trimmed
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, l => l.toUpperCase());
+
+  return { emoji, name };
+}
+
+const EMOJI_PALETTE = ['🍿', '🧋', '🧀', '🍟', '🍔', '🍕', '🥤', '🍦', '🥪', '🌮', '🥟', '🍜', '🍚', '🍗', '🌯', '🍝', '☕', '🧃', '❤️', '🌟', '🍽️', '🥗', '🍩', '🍫'];
+
 const DEFAULT_CATEGORIES: CategoryItem[] = [
   // Ready Foods
   { key: 'POPCORN', label: '🍿 Popcorn', section: 'READY_FOOD' },
@@ -33,6 +75,8 @@ const DEFAULT_CATEGORIES: CategoryItem[] = [
   { key: 'MILKSHAKE', label: '🥤 Milkshake', section: 'READY_FOOD' },
   { key: 'ICE_CREAM', label: '🍦 Ice Cream', section: 'READY_FOOD' },
   { key: 'BEVERAGES', label: '🧃 Beverages', section: 'READY_FOOD' },
+  { key: 'BOBA', label: '🧋 Boba', section: 'READY_FOOD' },
+  { key: 'NACHOS', label: '🧀 Nachos', section: 'READY_FOOD' },
   { key: 'LOVE_SPECIAL', label: '❤️ Love Special', section: 'READY_FOOD' },
   // Kitchen Foods
   { key: 'SNACKS', label: '🍟 Snacks', section: 'KITCHEN_FOOD' },
@@ -68,8 +112,19 @@ export default function MenuManager({ user }: { user: any }) {
 
   // Modal for adding category
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [newCatEmoji, setNewCatEmoji] = useState('🍽️');
   const [newCatName, setNewCatName] = useState('');
   const [newCatSection, setNewCatSection] = useState<'READY_FOOD' | 'KITCHEN_FOOD'>('KITCHEN_FOOD');
+
+  // Category Manager Modal state
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [catSearchTerm, setCatSearchTerm] = useState('');
+  const [catSectionFilter, setCatSectionFilter] = useState<'ALL' | 'READY_FOOD' | 'KITCHEN_FOOD'>('ALL');
+  const [editingCategoryKey, setEditingCategoryKey] = useState<string | null>(null);
+  const [editEmoji, setEditEmoji] = useState('🍽️');
+  const [editName, setEditName] = useState('');
+  const [editSection, setEditSection] = useState<'READY_FOOD' | 'KITCHEN_FOOD'>('KITCHEN_FOOD');
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
 
   // Combined categories
   const allCategoryList = React.useMemo(() => {
@@ -79,13 +134,15 @@ export default function MenuManager({ user }: { user: any }) {
 
     // Also pick up any category existing in foods that isn't mapped yet
     foods.forEach(f => {
-      const catKey = (f.category || '').toUpperCase().trim();
+      const rawCat = (f.category || '').trim();
+      const catKey = rawCat.toUpperCase().replace(/\s+/g, '_');
       if (catKey && !map.has(catKey)) {
-        const isReady = ['POPCORN', 'LASSI', 'MILKSHAKE', 'ICE_CREAM', 'BEVERAGES', 'LOVE_SPECIAL'].includes(catKey) 
+        const isReady = ['POPCORN', 'LASSI', 'MILKSHAKE', 'ICE_CREAM', 'BEVERAGES', 'LOVE_SPECIAL', 'BOBA', 'NACHOS'].includes(catKey) 
           || f.food_type === 'READY_FOOD';
+        const { emoji, name } = extractEmojiAndName(rawCat);
         map.set(catKey, {
           key: catKey,
-          label: f.category,
+          label: `${emoji} ${name}`,
           section: isReady ? 'READY_FOOD' : 'KITCHEN_FOOD'
         });
       }
@@ -93,6 +150,108 @@ export default function MenuManager({ user }: { user: any }) {
 
     return Array.from(map.values());
   }, [customCategories, foods]);
+
+  const handleStartEditCategory = (cat: CategoryItem) => {
+    const { emoji, name } = extractEmojiAndName(cat.label);
+    setEditingCategoryKey(cat.key);
+    setEditEmoji(emoji);
+    setEditName(name);
+    setEditSection(cat.section);
+  };
+
+  const handleSaveCategory = async (oldCatKey: string) => {
+    const trimmed = editName.trim();
+    if (!trimmed) {
+      alert('Category name cannot be empty.');
+      return;
+    }
+    const emoji = editEmoji.trim() || '🍽️';
+    const newLabel = `${emoji} ${trimmed}`;
+    const newKey = trimmed.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+
+    setIsSavingCategory(true);
+    try {
+      // Find all food items currently matching this category
+      const affectedItems = foods.filter(f => {
+        const fCat = (f.category || '').toUpperCase().trim();
+        return fCat === oldCatKey || fCat === oldCatKey.replace(/_/g, ' ') || (f.category || '').toLowerCase() === oldCatKey.toLowerCase();
+      });
+
+      if (affectedItems.length > 0) {
+        const confirmMsg = `There are ${affectedItems.length} menu item(s) currently under this category.\n\nUpdating will change their category to "${trimmed}" (${newKey}) and update food routing in Supabase.\n\nProceed?`;
+        if (!window.confirm(confirmMsg)) {
+          setIsSavingCategory(false);
+          return;
+        }
+
+        // Update items in Supabase
+        const { error: updateError } = await supabase
+          .from('food_items')
+          .update({
+            category: newKey,
+            food_type: editSection
+          })
+          .or(`category.eq.${oldCatKey},category.ilike.${oldCatKey},category.ilike.${trimmed}`);
+
+        if (updateError) {
+          console.error('Failed to update category on food_items:', updateError);
+          alert('Failed to update food items in database: ' + updateError.message);
+          setIsSavingCategory(false);
+          return;
+        }
+      }
+
+      // Update custom categories list
+      const updatedItem: CategoryItem = {
+        key: newKey,
+        label: newLabel,
+        section: editSection
+      };
+
+      const updated = [
+        ...customCategories.filter(c => c.key !== oldCatKey && c.key !== newKey),
+        updatedItem
+      ];
+      setCustomCategories(updated);
+      try {
+        localStorage.setItem('cinema_custom_categories', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to save custom category:', e);
+      }
+
+      await triggerCacheInvalidation('');
+      await fetchData();
+      setEditingCategoryKey(null);
+      alert(`Category "${newLabel}" saved successfully! ${affectedItems.length} menu item(s) updated.`);
+    } catch (err: any) {
+      console.error('Save category error:', err);
+      alert('Error saving category: ' + (err?.message || err));
+    } finally {
+      setIsSavingCategory(false);
+    }
+  };
+
+  const handleDeleteCategory = (cat: CategoryItem) => {
+    const affectedCount = foods.filter(f => {
+      const fCat = (f.category || '').toUpperCase().trim();
+      return fCat === cat.key || fCat === cat.key.replace(/_/g, ' ') || (f.category || '').toLowerCase() === cat.key.toLowerCase();
+    }).length;
+
+    if (affectedCount > 0) {
+      alert(`Cannot delete "${cat.label}": There are ${affectedCount} item(s) currently using this category.\n\nPlease change their category first.`);
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete category "${cat.label}"?`)) return;
+
+    const updated = customCategories.filter(c => c.key !== cat.key);
+    setCustomCategories(updated);
+    try {
+      localStorage.setItem('cinema_custom_categories', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to delete category:', e);
+    }
+  };
 
   const handleCreateCategory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,9 +264,10 @@ export default function MenuManager({ user }: { user: any }) {
       return;
     }
 
+    const emoji = (newCatEmoji || '').trim() || '🍽️';
     const newCategory: CategoryItem = {
       key: formattedKey,
-      label: trimmed,
+      label: `${emoji} ${trimmed}`,
       section: newCatSection
     };
 
@@ -122,6 +282,7 @@ export default function MenuManager({ user }: { user: any }) {
     // Automatically select the newly created category in the food item form
     setFormData(prev => ({ ...prev, category: formattedKey }));
     setNewCatName('');
+    setNewCatEmoji('🍽️');
     setShowAddCategoryModal(false);
   };
 
@@ -395,11 +556,14 @@ export default function MenuManager({ user }: { user: any }) {
   };
 
   const handleOpenEdit = (item: FoodItem) => {
+    const rawCat = (item.category || '').trim();
+    const catUpper = rawCat.toUpperCase().replace(/\s+/g, '_');
+    const matched = allCategoryList.find(c => c.key === catUpper || c.key === rawCat.toUpperCase());
     setFormData({
         name: item.name,
         description: item.description || '',
         price: item.price.toString(),
-        category: item.category,
+        category: matched ? matched.key : (item.category || 'POPCORN'),
         imageUrl: item.image_url || '',
         cinemaId: item.cinema_id || '',
         applyGst: item.apply_gst !== false,
@@ -525,14 +689,36 @@ export default function MenuManager({ user }: { user: any }) {
           <h1 style={{ fontSize: '32px', marginBottom: '8px', fontWeight: '900', letterSpacing: '-1.5px' }}>{user?.role === 'SUPER_ADMIN' ? 'Global Menu' : 'Outlet Menu'}</h1>
           <p style={{ color: 'var(--text-secondary)' }}>Curate the culinary experience for your patrons.</p>
         </div>
-        <button 
-          onClick={() => setShowBulkModal(true)}
-          className="btn-glass"
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', borderRadius: '14px', fontWeight: 'bold', cursor: 'pointer' }}
-        >
-          <Upload size={18} color="var(--primary-red)" />
-          <span>Bulk Import Menu</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button 
+            type="button"
+            onClick={() => setShowCategoryManager(true)}
+            className="btn-glass"
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              padding: '12px 20px', 
+              borderRadius: '14px', 
+              fontWeight: 'bold', 
+              cursor: 'pointer',
+              border: '1px solid rgba(0, 210, 255, 0.3)',
+              color: '#00d2ff',
+              background: 'rgba(0, 210, 255, 0.08)'
+            }}
+          >
+            <Settings size={18} />
+            <span>Manage Categories</span>
+          </button>
+          <button 
+            onClick={() => setShowBulkModal(true)}
+            className="btn-glass"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', borderRadius: '14px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            <Upload size={18} color="var(--primary-red)" />
+            <span>Bulk Import Menu</span>
+          </button>
+        </div>
       </header>
 
       <div style={{ display: 'flex', gap: '32px', flex: 1, minHeight: 0 }}>
@@ -581,7 +767,16 @@ export default function MenuManager({ user }: { user: any }) {
                                 </div>
                                 <p style={{ fontSize: '12px', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: '12px' }}>{item.description}</p>
                                 <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '4px', color: 'rgba(255,255,255,0.4)' }}>{item.category}</span>
+                                    {(() => {
+                                        const rawCat = (item.category || '').trim();
+                                        const catUpper = rawCat.toUpperCase().replace(/\s+/g, '_');
+                                        const matched = allCategoryList.find(c => c.key === catUpper || c.key === rawCat.toUpperCase());
+                                        return (
+                                            <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.06)', padding: '3px 8px', borderRadius: '6px', color: 'rgba(255,255,255,0.75)', fontWeight: '500' }}>
+                                                {matched ? matched.label : item.category}
+                                            </span>
+                                        );
+                                    })()}
                                     {user?.role === 'SUPER_ADMIN' && <span style={{ fontSize: '10px', color: 'var(--primary-red)', fontWeight: 'bold' }}>{item.cinemas?.name || 'Global'}</span>}
                                 </div>
                             </div>
@@ -625,35 +820,51 @@ export default function MenuManager({ user }: { user: any }) {
                         <div className="input-group">
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                 <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', margin: 0 }}>Category</label>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowAddCategoryModal(true)}
-                                    title="Add New Category (Kitchen or Ready Food)"
-                                    style={{
-                                        background: 'rgba(255, 47, 146, 0.15)',
-                                        border: '1px solid rgba(255, 47, 146, 0.3)',
-                                        color: '#ff2f92',
-                                        borderRadius: '6px',
-                                        width: '22px',
-                                        height: '22px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                        padding: 0
-                                    }}
-                                    onMouseEnter={e => {
-                                        e.currentTarget.style.background = 'var(--primary-red)';
-                                        e.currentTarget.style.color = '#ffffff';
-                                    }}
-                                    onMouseLeave={e => {
-                                        e.currentTarget.style.background = 'rgba(255, 47, 146, 0.15)';
-                                        e.currentTarget.style.color = '#ff2f92';
-                                    }}
-                                >
-                                    <Plus size={14} />
-                                </button>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCategoryManager(true)}
+                                        title="Manage Categories & Edit Spellings/Emojis"
+                                        style={{
+                                            background: 'rgba(0, 210, 255, 0.12)',
+                                            border: '1px solid rgba(0, 210, 255, 0.3)',
+                                            color: '#00d2ff',
+                                            borderRadius: '6px',
+                                            padding: '2px 8px',
+                                            fontSize: '11px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            cursor: 'pointer',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Settings size={12} />
+                                        <span>Manage</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddCategoryModal(true)}
+                                        title="Add New Category"
+                                        style={{
+                                            background: 'rgba(255, 47, 146, 0.15)',
+                                            border: '1px solid rgba(255, 47, 146, 0.3)',
+                                            color: '#ff2f92',
+                                            borderRadius: '6px',
+                                            width: '24px',
+                                            height: '24px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s',
+                                            padding: 0
+                                        }}
+                                    >
+                                        <Plus size={14} />
+                                    </button>
+                                </div>
                             </div>
                             <select 
                                 className="input-premium" 
@@ -995,6 +1206,427 @@ export default function MenuManager({ user }: { user: any }) {
         </div>
       )}
 
+      {/* Category Manager & Spelling Editor Modal */}
+      {showCategoryManager && (
+        <div className="modal-overlay" style={{
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+            background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(16px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000,
+            padding: '20px'
+        }}>
+          <div className="glass-card" style={{
+              width: '100%', maxWidth: '780px', maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+              padding: '28px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '24px',
+              boxShadow: '0 25px 50px rgba(0,0,0,0.7)', overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '16px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(0, 210, 255, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00d2ff' }}>
+                    <Settings size={20} />
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: '20px', fontWeight: '900', margin: 0, color: 'white' }}>Category & Spelling Manager</h3>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '4px 0 0' }}>
+                      Add sticker/emojis, correct category spellings, or switch routing sections. Saving syncs across all items in the database.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => { setShowCategoryManager(false); setEditingCategoryKey(null); }} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '6px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Quick Add Section */}
+            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '20px' }}>
+              <div style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', marginBottom: '10px' }}>
+                Quick Add New Category
+              </div>
+              <form onSubmit={handleCreateCategory} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <input
+                    type="text"
+                    value={newCatEmoji}
+                    onChange={e => setNewCatEmoji(e.target.value)}
+                    style={{ width: '32px', textAlign: 'center', fontSize: '18px', background: 'transparent', border: 'none', outline: 'none', color: 'white' }}
+                    title="Emoji Icon"
+                  />
+                  <div style={{ display: 'flex', gap: '2px', overflowX: 'auto', maxWidth: '160px' }}>
+                    {EMOJI_PALETTE.slice(0, 6).map(em => (
+                      <button
+                        key={em}
+                        type="button"
+                        onClick={() => setNewCatEmoji(em)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '2px' }}
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <input
+                  type="text"
+                  className="input-premium"
+                  placeholder="Category Name (e.g. Nachos, Boba)..."
+                  value={newCatName}
+                  onChange={e => setNewCatName(e.target.value)}
+                  style={{ flex: 1, minWidth: '160px' }}
+                />
+
+                <select
+                  value={newCatSection}
+                  onChange={e => setNewCatSection(e.target.value as any)}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    background: 'var(--surface-container-high)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: newCatSection === 'READY_FOOD' ? '#ffb36a' : '#00d2ff',
+                    fontWeight: 'bold',
+                    fontSize: '12px'
+                  }}
+                >
+                  <option value="READY_FOOD">🟢 Ready Food</option>
+                  <option value="KITCHEN_FOOD">🔥 Kitchen Food</option>
+                </select>
+
+                <button
+                  type="submit"
+                  className="btn-lucrative"
+                  style={{ padding: '10px 16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Plus size={16} />
+                  <span>Add Category</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Filter Tabs & Search */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', gap: '6px', background: 'rgba(255,255,255,0.04)', padding: '4px', borderRadius: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setCatSectionFilter('ALL')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    background: catSectionFilter === 'ALL' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                    color: catSectionFilter === 'ALL' ? 'white' : 'var(--text-secondary)'
+                  }}
+                >
+                  All ({allCategoryList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatSectionFilter('READY_FOOD')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    background: catSectionFilter === 'READY_FOOD' ? 'rgba(255, 179, 106, 0.2)' : 'transparent',
+                    color: catSectionFilter === 'READY_FOOD' ? '#ffb36a' : 'var(--text-secondary)'
+                  }}
+                >
+                  🟢 Ready Food ({allCategoryList.filter(c => c.section === 'READY_FOOD').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatSectionFilter('KITCHEN_FOOD')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    background: catSectionFilter === 'KITCHEN_FOOD' ? 'rgba(0, 210, 255, 0.2)' : 'transparent',
+                    color: catSectionFilter === 'KITCHEN_FOOD' ? '#00d2ff' : 'var(--text-secondary)'
+                  }}
+                >
+                  🔥 Kitchen Food ({allCategoryList.filter(c => c.section === 'KITCHEN_FOOD').length})
+                </button>
+              </div>
+
+              <div style={{ position: 'relative', width: '220px' }}>
+                <Search size={14} color="rgba(255,255,255,0.4)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input
+                  type="text"
+                  placeholder="Filter categories..."
+                  value={catSearchTerm}
+                  onChange={e => setCatSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px 10px 6px 30px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '8px',
+                    color: 'white',
+                    fontSize: '12px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Scrollable Category List */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px', minHeight: '260px' }}>
+              {allCategoryList
+                .filter(cat => {
+                  if (catSectionFilter !== 'ALL' && cat.section !== catSectionFilter) return false;
+                  if (catSearchTerm) {
+                    return cat.label.toLowerCase().includes(catSearchTerm.toLowerCase()) || cat.key.toLowerCase().includes(catSearchTerm.toLowerCase());
+                  }
+                  return true;
+                })
+                .map(cat => {
+                  const itemCount = foods.filter(f => {
+                    const fCat = (f.category || '').toUpperCase().trim();
+                    return fCat === cat.key || fCat === cat.key.replace(/_/g, ' ') || (f.category || '').toLowerCase() === cat.key.toLowerCase();
+                  }).length;
+                  const isEditingThis = editingCategoryKey === cat.key;
+
+                  if (isEditingThis) {
+                    return (
+                      <div
+                        key={cat.key}
+                        style={{
+                          background: 'rgba(0, 210, 255, 0.08)',
+                          border: '1px solid rgba(0, 210, 255, 0.3)',
+                          borderRadius: '16px',
+                          padding: '16px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '900', color: '#00d2ff', textTransform: 'uppercase' }}>
+                            Editing Category: {cat.key}
+                          </span>
+                          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>
+                            {itemCount} item(s) currently linked
+                          </span>
+                        </div>
+
+                        {/* Emoji & Spelling Form */}
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.06)', padding: '6px 10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                            <input
+                              type="text"
+                              value={editEmoji}
+                              onChange={e => setEditEmoji(e.target.value)}
+                              style={{ width: '32px', textAlign: 'center', fontSize: '20px', background: 'transparent', border: 'none', outline: 'none', color: 'white' }}
+                              title="Emoji Icon"
+                            />
+                            <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', maxWidth: '200px' }}>
+                              {EMOJI_PALETTE.map(em => (
+                                <button
+                                  key={em}
+                                  type="button"
+                                  onClick={() => setEditEmoji(em)}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px' }}
+                                >
+                                  {em}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div style={{ flex: 1, minWidth: '180px' }}>
+                            <input
+                              type="text"
+                              className="input-premium"
+                              placeholder="Correct Category Spelling (e.g. Nachos)..."
+                              value={editName}
+                              onChange={e => setEditName(e.target.value)}
+                              style={{ width: '100%', fontSize: '14px', fontWeight: 'bold' }}
+                              autoFocus
+                            />
+                          </div>
+
+                          <select
+                            value={editSection}
+                            onChange={e => setEditSection(e.target.value as any)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: '10px',
+                              background: 'var(--surface-container-high)',
+                              border: '1px solid rgba(255,255,255,0.15)',
+                              color: editSection === 'READY_FOOD' ? '#ffb36a' : '#00d2ff',
+                              fontWeight: 'bold',
+                              fontSize: '12px'
+                            }}
+                          >
+                            <option value="READY_FOOD">🟢 Ready Food</option>
+                            <option value="KITCHEN_FOOD">🔥 Kitchen Food</option>
+                          </select>
+                        </div>
+
+                        {itemCount > 0 && (
+                          <div style={{ fontSize: '12px', color: '#ffb36a', background: 'rgba(255, 179, 106, 0.1)', padding: '8px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <AlertCircle size={14} />
+                            <span>Saving will update all {itemCount} existing menu item(s) in the database to this category & routing.</span>
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setEditingCategoryKey(null)}
+                            style={{ padding: '8px 16px', borderRadius: '10px', background: 'rgba(255,255,255,0.06)', color: 'white', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                            disabled={isSavingCategory}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveCategory(cat.key)}
+                            className="btn-lucrative"
+                            style={{ padding: '8px 18px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            disabled={isSavingCategory}
+                          >
+                            {isSavingCategory ? (
+                              <>
+                                <Loader2 className="animate-spin" size={14} />
+                                <span>Saving...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Check size={14} />
+                                <span>Save Changes</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={cat.key}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px 16px',
+                        background: 'rgba(255,255,255,0.03)',
+                        borderRadius: '14px',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '20px' }}>{extractEmojiAndName(cat.label).emoji}</span>
+                        <div>
+                          <div style={{ fontWeight: 'bold', fontSize: '14px', color: 'white' }}>
+                            {extractEmojiAndName(cat.label).name}
+                          </div>
+                          <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>
+                            Key: {cat.key}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          padding: '3px 10px',
+                          borderRadius: '8px',
+                          background: cat.section === 'READY_FOOD' ? 'rgba(255, 179, 106, 0.12)' : 'rgba(0, 210, 255, 0.12)',
+                          color: cat.section === 'READY_FOOD' ? '#ffb36a' : '#00d2ff',
+                          border: cat.section === 'READY_FOOD' ? '1px solid rgba(255, 179, 106, 0.25)' : '1px solid rgba(0, 210, 255, 0.25)'
+                        }}>
+                          {cat.section === 'READY_FOOD' ? '🟢 Ready Food' : '🔥 Kitchen Food'}
+                        </span>
+
+                        <span style={{
+                          fontSize: '11px',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          background: 'rgba(255,255,255,0.06)',
+                          color: itemCount > 0 ? 'white' : 'rgba(255,255,255,0.4)',
+                          fontWeight: '500'
+                        }}>
+                          {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                        </span>
+
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditCategory(cat)}
+                            title="Edit Spelling, Emoji & Section"
+                            style={{
+                              background: 'rgba(255,255,255,0.06)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              color: 'white',
+                              borderRadius: '8px',
+                              padding: '6px 10px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11px',
+                              fontWeight: 'bold'
+                            }}
+                          >
+                            <Edit2 size={12} />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(cat)}
+                            title={itemCount > 0 ? "Cannot delete category while items are attached" : "Delete category"}
+                            style={{
+                              background: 'rgba(211,47,47,0.15)',
+                              border: '1px solid rgba(211,47,47,0.3)',
+                              color: '#ff4d4d',
+                              borderRadius: '8px',
+                              padding: '6px 8px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              opacity: itemCount > 0 ? 0.4 : 1
+                            }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* Footer */}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => { setShowCategoryManager(false); setEditingCategoryKey(null); }}
+                style={{ padding: '10px 24px', background: 'rgba(255,255,255,0.08)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add New Category Modal */}
       {showAddCategoryModal && (
         <div className="modal-overlay" style={{
@@ -1011,12 +1643,12 @@ export default function MenuManager({ user }: { user: any }) {
               <div>
                 <h3 style={{ fontSize: '20px', fontWeight: '900', margin: 0 }}>Add Menu Category</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '4px 0 0' }}>
-                  Choose whether items in this category route to Kitchen or Ready section.
+                  Choose an emoji icon, category name, and kitchen/ready routing.
                 </p>
               </div>
               <button 
-                type="button"
-                onClick={() => { setShowAddCategoryModal(false); setNewCatName(''); }} 
+                type="button" 
+                onClick={() => { setShowAddCategoryModal(false); setNewCatName(''); setNewCatEmoji('🍽️'); }} 
                 style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
               >
                 <X size={20} />
@@ -1026,17 +1658,39 @@ export default function MenuManager({ user }: { user: any }) {
             <form onSubmit={handleCreateCategory} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div className="input-group">
                 <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: '8px', display: 'block' }}>
-                  Category Name
+                  Category Icon & Name
                 </label>
-                <input 
-                  type="text" 
-                  className="input-premium" 
-                  placeholder="e.g. Desserts, Mocktails, Rolls..." 
-                  value={newCatName}
-                  onChange={e => setNewCatName(e.target.value)}
-                  autoFocus
-                  required 
-                />
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={newCatEmoji}
+                    onChange={e => setNewCatEmoji(e.target.value)}
+                    style={{ width: '44px', height: '44px', textAlign: 'center', fontSize: '20px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: 'white' }}
+                    title="Emoji Icon"
+                  />
+                  <input 
+                    type="text" 
+                    className="input-premium" 
+                    placeholder="e.g. Desserts, Mocktails, Rolls..." 
+                    value={newCatName}
+                    onChange={e => setNewCatName(e.target.value)}
+                    autoFocus
+                    required 
+                    style={{ flex: 1 }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '4px', marginTop: '6px', overflowX: 'auto', paddingBottom: '4px' }}>
+                  {EMOJI_PALETTE.slice(0, 10).map(em => (
+                    <button
+                      key={em}
+                      type="button"
+                      onClick={() => setNewCatEmoji(em)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px' }}
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="input-group">
@@ -1093,7 +1747,7 @@ export default function MenuManager({ user }: { user: any }) {
               <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
                 <button 
                   type="button" 
-                  onClick={() => { setShowAddCategoryModal(false); setNewCatName(''); }}
+                  onClick={() => { setShowAddCategoryModal(false); setNewCatName(''); setNewCatEmoji('🍽️'); }}
                   style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.05)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
                   Cancel
