@@ -14,7 +14,17 @@ import {
   ShoppingBag,
   Clock,
   Zap,
-  ChevronDown
+  ChevronDown,
+  Target,
+  Award,
+  Plus,
+  Edit2,
+  Trash2,
+  CheckCircle2,
+  AlertCircle,
+  Users,
+  Eye,
+  RotateCcw
 } from 'lucide-react';
 import { 
   LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, 
@@ -112,10 +122,199 @@ export default function SalesDashboard({ user }: { user: any }) {
   const [staffSalesList, setStaffSalesList] = useState<any[]>([]);
 
   const cinemaId = user.cinema_id;
+  const isOutletAdmin = Boolean(user && (user.role === 'OUTLET_MANAGER' || user.role === 'SUPER_ADMIN'));
+
+  // --- Outlet Sales Targets State ---
+  const [targetsList, setTargetsList] = useState<any[]>([]);
+  const [targetsLoading, setTargetsLoading] = useState(false);
+  const [selectedTarget, setSelectedTarget] = useState<any | null>(null);
+  const [targetsProgressMap, setTargetsProgressMap] = useState<Record<string, { achieved: number; orders: number }>>({});
+
+  // Target Modal State
+  const [showTargetModal, setShowTargetModal] = useState(false);
+  const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
+  const [targetForm, setTargetForm] = useState({
+    title: '',
+    target_amount: '',
+    start_date: '',
+    end_date: ''
+  });
+  const [targetSaving, setTargetSaving] = useState(false);
 
   useEffect(() => {
     fetchAnalytics();
   }, [cinemaId, startDate, endDate]);
+
+  useEffect(() => {
+    fetchTargets();
+  }, [cinemaId]);
+
+  const fetchTargets = async () => {
+    if (!cinemaId || cinemaId === 'default') return;
+    setTargetsLoading(true);
+    try {
+      const { data: targets, error } = await supabase
+        .from('outlet_sales_targets')
+        .select('*')
+        .eq('cinema_id', cinemaId)
+        .order('start_date', { ascending: false });
+
+      if (error) {
+        console.warn('Could not load outlet_sales_targets:', error.message);
+        setTargetsList([]);
+        return;
+      }
+
+      const list = targets || [];
+      setTargetsList(list);
+
+      // Compute achieved sales for each target within its exact date window
+      const progressMap: Record<string, { achieved: number; orders: number }> = {};
+      for (const t of list) {
+        try {
+          const { data: orderData } = await supabase
+            .from('orders')
+            .select('total_amount')
+            .eq('cinema_id', cinemaId)
+            .not('status', 'in', '("CANCELLED","REFUNDED")')
+            .gte('created_at', t.start_date + 'T00:00:00Z')
+            .lte('created_at', t.end_date + 'T23:59:59Z');
+
+          const total = (orderData || []).reduce((sum: number, o: any) => sum + (Number(o.total_amount) || 0), 0);
+          progressMap[t.id] = { achieved: total, orders: orderData?.length || 0 };
+        } catch {
+          progressMap[t.id] = { achieved: 0, orders: 0 };
+        }
+      }
+      setTargetsProgressMap(progressMap);
+
+      setSelectedTarget((prev: any) => {
+        if (prev) {
+          const found = list.find((x: any) => x.id === prev.id);
+          if (found) return found;
+        }
+        return list.length > 0 ? list[0] : null;
+      });
+    } catch (err) {
+      console.error('Error in fetchTargets:', err);
+    } finally {
+      setTargetsLoading(false);
+    }
+  };
+
+  const openNewTargetModal = () => {
+    const today = new Date();
+    const pad = (n: number) => n < 10 ? '0' + n : n;
+    const toStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const next7Days = new Date();
+    next7Days.setDate(next7Days.getDate() + 7);
+
+    setEditingTargetId(null);
+    setTargetForm({
+      title: 'Weekly Sales Sprint',
+      target_amount: '',
+      start_date: toStr(today),
+      end_date: toStr(next7Days)
+    });
+    setShowTargetModal(true);
+  };
+
+  const openEditTargetModal = (target: any) => {
+    setEditingTargetId(target.id);
+    setTargetForm({
+      title: target.title || '',
+      target_amount: String(target.target_amount || ''),
+      start_date: target.start_date || '',
+      end_date: target.end_date || ''
+    });
+    setShowTargetModal(true);
+  };
+
+  const handleSaveTarget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isOutletAdmin) return;
+    if (!targetForm.title || !targetForm.target_amount || !targetForm.start_date || !targetForm.end_date) {
+      alert('Please fill out all target fields.');
+      return;
+    }
+    if (new Date(targetForm.end_date) < new Date(targetForm.start_date)) {
+      alert('End date cannot be earlier than start date.');
+      return;
+    }
+
+    setTargetSaving(true);
+    try {
+      const payload = {
+        cinema_id: cinemaId,
+        title: targetForm.title.trim(),
+        target_amount: parseFloat(targetForm.target_amount),
+        start_date: targetForm.start_date,
+        end_date: targetForm.end_date,
+        created_by: user.id || null
+      };
+
+      if (editingTargetId) {
+        const { error } = await supabase
+          .from('outlet_sales_targets')
+          .update(payload)
+          .eq('id', editingTargetId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('outlet_sales_targets')
+          .insert([payload]);
+        if (error) throw error;
+      }
+
+      setShowTargetModal(false);
+      setEditingTargetId(null);
+      await fetchTargets();
+    } catch (err: any) {
+      alert('Failed to save sales target: ' + (err.message || err));
+    } finally {
+      setTargetSaving(false);
+    }
+  };
+
+  const handleDeleteTarget = async (targetId: string, title: string) => {
+    if (!isOutletAdmin) return;
+    if (!confirm(`Are you sure you want to delete target "${title}"?`)) return;
+    try {
+      const { error } = await supabase
+        .from('outlet_sales_targets')
+        .delete()
+        .eq('id', targetId);
+      if (error) throw error;
+      if (selectedTarget?.id === targetId) {
+        setSelectedTarget(null);
+      }
+      await fetchTargets();
+    } catch (err: any) {
+      alert('Failed to delete target: ' + err.message);
+    }
+  };
+
+  const handleInspectTarget = (target: any) => {
+    setSelectedTarget(target);
+    setStartDate(target.start_date);
+    setEndDate(target.end_date);
+    setTimeout(() => {
+      document.getElementById('staff-breakdown-section')?.scrollIntoView({ behavior: 'smooth' });
+    }, 150);
+  };
+
+  const selectedTargetChartData = useMemo(() => {
+    if (!selectedTarget) return [];
+    const targetAmt = Number(selectedTarget.target_amount) || 0;
+    const achievedAmt = targetsProgressMap[selectedTarget.id]?.achieved || 0;
+    return [
+      {
+        name: selectedTarget.title || 'Target',
+        'Target Goal (₹)': targetAmt,
+        'Achieved Sales (₹)': achievedAmt
+      }
+    ];
+  }, [selectedTarget, targetsProgressMap]);
 
   const fetchAnalytics = async () => {
     if (!cinemaId || cinemaId === 'default') return;
@@ -240,6 +439,16 @@ export default function SalesDashboard({ user }: { user: any }) {
           }
           .analytics-mobile-cards {
             display: none !important;
+          }
+        }
+        .target-grid-responsive {
+          display: grid;
+          grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+          gap: 16px;
+        }
+        @media (max-width: 900px) {
+          .target-grid-responsive {
+            grid-template-columns: 1fr !important;
           }
         }
       `}</style>
@@ -369,6 +578,154 @@ export default function SalesDashboard({ user }: { user: any }) {
                 Apply Range Filter
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Target Modal (Admin Only) */}
+      {showTargetModal && isOutletAdmin && (
+        <div 
+          className="analytics-filter-modal-overlay"
+          onClick={() => setShowTargetModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            zIndex: 2100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+        >
+          <div 
+            className="glass-card animate-in fade-in" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ 
+              width: '100%',
+              maxWidth: '440px',
+              border: '1px solid rgba(255,47,146,0.3)',
+              background: '#0a0f1e',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.85)',
+              borderRadius: '20px',
+              padding: '24px',
+              boxSizing: 'border-box'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Target size={20} color="var(--primary-glow)" />
+                <span style={{ fontSize: '14px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'white' }}>
+                  {editingTargetId ? 'Edit Sales Target' : 'Set Outlet Sales Target'}
+                </span>
+              </div>
+              <button 
+                onClick={() => setShowTargetModal(false)} 
+                style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', cursor: 'pointer' }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTarget} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', fontWeight: '700' }}>
+                  TARGET TITLE / CAMPAIGN
+                </label>
+                <input 
+                  type="text" 
+                  value={targetForm.title} 
+                  onChange={e => setTargetForm({ ...targetForm, title: e.target.value })} 
+                  placeholder="e.g. Weekly Target or Diwali Rush"
+                  className="input-premium" 
+                  style={{ width: '100%', fontSize: '13px', padding: '10px 14px', boxSizing: 'border-box' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', fontWeight: '700' }}>
+                  TARGET REVENUE AMOUNT (₹)
+                </label>
+                <input 
+                  type="number" 
+                  step="1"
+                  min="1"
+                  value={targetForm.target_amount} 
+                  onChange={e => setTargetForm({ ...targetForm, target_amount: e.target.value })} 
+                  placeholder="e.g. 20000"
+                  className="input-premium" 
+                  style={{ width: '100%', fontSize: '13px', padding: '10px 14px', boxSizing: 'border-box' }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', fontWeight: '700' }}>
+                    START DATE
+                  </label>
+                  <input 
+                    type="date" 
+                    value={targetForm.start_date} 
+                    onChange={e => setTargetForm({ ...targetForm, start_date: e.target.value })} 
+                    className="input-premium" 
+                    style={{ width: '100%', fontSize: '12px', padding: '10px', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', fontWeight: '700' }}>
+                    END DATE
+                  </label>
+                  <input 
+                    type="date" 
+                    value={targetForm.end_date} 
+                    onChange={e => setTargetForm({ ...targetForm, end_date: e.target.value })} 
+                    className="input-premium" 
+                    style={{ width: '100%', fontSize: '12px', padding: '10px', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button 
+                  type="button"
+                  onClick={() => setShowTargetModal(false)}
+                  style={{ 
+                    flex: 1, 
+                    padding: '12px', 
+                    borderRadius: '10px', 
+                    background: 'rgba(255,255,255,0.06)', 
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'white',
+                    fontWeight: '700',
+                    fontSize: '12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={targetSaving}
+                  className="btn-lucrative" 
+                  style={{ flex: 1.5, padding: '12px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                >
+                  {targetSaving ? (
+                    <div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} />
+                      <span>{editingTargetId ? 'Update Target' : 'Save Target'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -560,6 +917,349 @@ export default function SalesDashboard({ user }: { user: any }) {
 
       </div>
 
+      {/* ========================================================================= */}
+      {/* OUTLET SALES TARGET & ACHIEVEMENT SECTION                                */}
+      {/* ========================================================================= */}
+      <div style={{ marginTop: '20px' }}>
+        <ChartContainer 
+          title="Outlet Sales Target & Achievement" 
+          loading={targetsLoading}
+          headerAction={
+            isOutletAdmin && (
+              <button
+                onClick={openNewTargetModal}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 14px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, var(--primary-glow), #E11D48)',
+                  border: 'none',
+                  color: 'white',
+                  fontWeight: '800',
+                  fontSize: '11px',
+                  letterSpacing: '0.5px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(255, 47, 146, 0.3)'
+                }}
+              >
+                <Plus size={14} />
+                <span>SET TARGET</span>
+              </button>
+            )
+          }
+        >
+          {targetsList.length === 0 ? (
+            <div style={{ padding: '36px 20px', textAlign: 'center' }}>
+              <div style={{
+                width: '48px', height: '48px', borderRadius: '50%',
+                background: 'rgba(255, 47, 146, 0.1)', border: '1px solid rgba(255, 47, 146, 0.25)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px'
+              }}>
+                <Target size={24} color="var(--primary-glow)" />
+              </div>
+              <h4 style={{ margin: '0 0 6px', color: 'white', fontSize: '15px', fontWeight: '800' }}>
+                No Sales Targets Configured
+              </h4>
+              <p style={{ margin: '0 auto 16px', maxWidth: '420px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                {isOutletAdmin 
+                  ? 'Set a sales milestone for this outlet with custom start and end dates to motivate and track staff performance.' 
+                  : 'Your outlet admin has not published an active sales target yet.'}
+              </p>
+              {isOutletAdmin && (
+                <button
+                  onClick={openNewTargetModal}
+                  className="btn-lucrative"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 18px', fontSize: '12px' }}
+                >
+                  <Plus size={14} />
+                  <span>Create First Target</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="target-grid-responsive">
+              {/* Left Column: Active / Selected Target Bar Graph & Metric Cards */}
+              {selectedTarget && (
+                <div style={{
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '16px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px'
+                }}>
+                  {/* Target Card Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '800',
+                          background: 'rgba(255, 47, 146, 0.15)', color: 'var(--primary-glow)',
+                          border: '1px solid rgba(255, 47, 146, 0.3)'
+                        }}>
+                          SELECTED TARGET
+                        </span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600' }}>
+                          {selectedTarget.start_date} ➔ {selectedTarget.end_date}
+                        </span>
+                      </div>
+                      <h4 style={{ margin: '6px 0 0', fontSize: '17px', fontWeight: '900', color: 'white' }}>
+                        {selectedTarget.title}
+                      </h4>
+                    </div>
+
+                    <button
+                      onClick={() => handleInspectTarget(selectedTarget)}
+                      style={{
+                        background: 'rgba(255, 179, 106, 0.12)',
+                        border: '1px solid rgba(255, 179, 106, 0.3)',
+                        borderRadius: '8px',
+                        padding: '6px 12px',
+                        color: 'var(--accent-gold)',
+                        fontSize: '11px',
+                        fontWeight: '800',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <Users size={13} />
+                      <span>View Staff Sales</span>
+                    </button>
+                  </div>
+
+                  {/* 4-Stat Grid for Current Target */}
+                  {(() => {
+                    const tAmt = Number(selectedTarget.target_amount) || 0;
+                    const aAmt = targetsProgressMap[selectedTarget.id]?.achieved || 0;
+                    const pct = tAmt > 0 ? (aAmt / tAmt) * 100 : 0;
+                    const gap = Math.max(0, tAmt - aAmt);
+                    const isAchieved = aAmt >= tAmt;
+
+                    return (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Target Goal</div>
+                            <div style={{ fontSize: '16px', fontWeight: '900', color: 'var(--accent-gold)', marginTop: '2px' }}>
+                              ₹{tAmt.toLocaleString()}
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Achieved Sales</div>
+                            <div style={{ fontSize: '16px', fontWeight: '900', color: isAchieved ? '#10B981' : 'var(--primary-glow)', marginTop: '2px' }}>
+                              ₹{aAmt.toLocaleString()}
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Progress</div>
+                            <div style={{ fontSize: '15px', fontWeight: '900', color: 'white', marginTop: '2px' }}>
+                              {pct.toFixed(1)}%
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Status</div>
+                            <div style={{ fontSize: '13px', fontWeight: '800', color: isAchieved ? '#10B981' : '#F59E0B', marginTop: '2px' }}>
+                              {isAchieved ? '🎉 Achieved!' : `₹${gap.toLocaleString()} left`}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Visual Progress Bar */}
+                        <div>
+                          <div style={{
+                            width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)',
+                            borderRadius: '999px', overflow: 'hidden'
+                          }}>
+                            <div style={{
+                              width: `${Math.min(100, pct)}%`,
+                              height: '100%',
+                              background: isAchieved 
+                                ? 'linear-gradient(90deg, #10B981, #059669)'
+                                : 'linear-gradient(90deg, var(--primary-glow), var(--accent-gold))',
+                              borderRadius: '999px',
+                              transition: 'width 0.6s ease'
+                            }} />
+                          </div>
+                        </div>
+
+                        {/* Comparative Bar Chart: Target vs Achieved */}
+                        <div style={{ width: '100%', height: 180, marginTop: '4px' }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={selectedTargetChartData} margin={{ top: 10, right: 10, bottom: 0, left: -10 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                              <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={11} />
+                              <YAxis stroke="var(--text-muted)" fontSize={10} width={40} tickFormatter={(val) => `₹${val >= 1000 ? (val/1000).toFixed(1) + 'k' : val}`} />
+                              <Tooltip contentStyle={{ background: 'var(--bg-dark)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }} />
+                              <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                              <Bar dataKey="Target Goal (₹)" fill="var(--accent-gold)" radius={[4, 4, 0, 0]} maxBarSize={45} />
+                              <Bar 
+                                dataKey="Achieved Sales (₹)" 
+                                fill={isAchieved ? '#10B981' : 'var(--primary-glow)'} 
+                                radius={[4, 4, 0, 0]} 
+                                maxBarSize={45} 
+                              />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Right Column: Targets History & Management */}
+              <div style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '16px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: 'white' }}>
+                    All Targets for this Outlet
+                  </h4>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {targetsList.length} Total
+                  </span>
+                </div>
+
+                {/* Targets Scrollable List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '350px', overflowY: 'auto' }}>
+                  {targetsList.map((t) => {
+                    const tAmt = Number(t.target_amount) || 0;
+                    const aAmt = targetsProgressMap[t.id]?.achieved || 0;
+                    const pct = tAmt > 0 ? (aAmt / tAmt) * 100 : 0;
+                    const isSelected = selectedTarget?.id === t.id;
+                    const isMet = aAmt >= tAmt;
+
+                    return (
+                      <div
+                        key={t.id}
+                        style={{
+                          background: isSelected ? 'rgba(255, 47, 146, 0.08)' : 'rgba(255,255,255,0.03)',
+                          border: `1px solid ${isSelected ? 'rgba(255, 47, 146, 0.4)' : 'rgba(255,255,255,0.05)'}`,
+                          borderRadius: '12px',
+                          padding: '12px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                          <div style={{ cursor: 'pointer', flex: 1 }} onClick={() => setSelectedTarget(t)}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontWeight: '800', fontSize: '13px', color: 'white' }}>
+                                {t.title}
+                              </span>
+                              {isMet && (
+                                <span style={{
+                                  padding: '1px 5px', borderRadius: '4px', fontSize: '9px', fontWeight: '800',
+                                  background: 'rgba(16, 185, 129, 0.15)', color: '#10B981'
+                                }}>
+                                  ✓ MET
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              {t.start_date} to {t.end_date}
+                            </div>
+                          </div>
+
+                          {/* Actions */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <button
+                              onClick={() => handleInspectTarget(t)}
+                              title="View Staff Contribution for this Target"
+                              style={{
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '6px',
+                                padding: '4px 8px',
+                                color: 'var(--accent-gold)',
+                                fontSize: '10px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              <Users size={12} />
+                              <span>Staff</span>
+                            </button>
+                            {isOutletAdmin && (
+                              <>
+                                <button
+                                  onClick={() => openEditTargetModal(t)}
+                                  title="Edit Target"
+                                  style={{
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    padding: '5px',
+                                    color: 'white',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteTarget(t.id, t.title)}
+                                  title="Delete Target"
+                                  style={{
+                                    background: 'rgba(239, 68, 68, 0.1)',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    padding: '5px',
+                                    color: '#EF4444',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Progress Row */}
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: '11px',
+                          borderTop: '1px solid rgba(255,255,255,0.04)',
+                          paddingTop: '6px'
+                        }}>
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            Target: <b style={{ color: 'white' }}>₹{tAmt.toLocaleString()}</b>
+                          </span>
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            Achieved: <b style={{ color: isMet ? '#10B981' : 'var(--primary-glow)' }}>₹{aAmt.toLocaleString()}</b>
+                          </span>
+                          <span style={{ fontWeight: '800', color: isMet ? '#10B981' : 'white' }}>
+                            {pct.toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </ChartContainer>
+      </div>
+
       {/* Employee Sales Performance */}
       <div style={{ marginTop: '20px' }}>
         <ChartContainer title="Staff Performance (Revenue & Orders)" loading={loading}>
@@ -581,7 +1281,7 @@ export default function SalesDashboard({ user }: { user: any }) {
       </div>
 
       {/* Outlet Staff Performance Table (Without Bonus Column) */}
-      <div className="glass-card" style={{ padding: 0, overflow: 'hidden', marginTop: '20px' }}>
+      <div id="staff-breakdown-section" className="glass-card" style={{ padding: 0, overflow: 'hidden', marginTop: '20px' }}>
         <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'white' }}>
             Outlet Staff Sales Breakdown
@@ -590,6 +1290,46 @@ export default function SalesDashboard({ user }: { user: any }) {
             Sales metrics for employees at this outlet (based on staff names configured in Superadmin)
           </p>
         </div>
+
+        {/* Target Context Banner when viewing target contributors */}
+        {selectedTarget && startDate === selectedTarget.start_date && endDate === selectedTarget.end_date && (
+          <div style={{
+            background: 'linear-gradient(90deg, rgba(255, 47, 146, 0.15), rgba(255, 179, 106, 0.1))',
+            borderBottom: '1px solid rgba(255, 47, 146, 0.25)',
+            padding: '10px 18px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '8px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Target size={16} color="var(--primary-glow)" />
+              <span style={{ fontSize: '12px', fontWeight: '800', color: 'white' }}>
+                Filtered for Target: <span style={{ color: 'var(--accent-gold)' }}>"{selectedTarget.title}"</span> ({selectedTarget.start_date} to {selectedTarget.end_date})
+              </span>
+            </div>
+            <button
+              onClick={() => setDatePreset('30days')}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: '6px',
+                padding: '4px 10px',
+                color: 'white',
+                fontSize: '11px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              <RotateCcw size={12} />
+              <span>Reset Date Filter</span>
+            </button>
+          </div>
+        )}
 
         {/* Desktop Table View */}
         <div className="analytics-desktop-table" style={{ overflowX: 'auto' }}>
