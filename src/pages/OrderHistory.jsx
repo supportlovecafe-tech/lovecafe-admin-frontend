@@ -71,14 +71,32 @@ export default function OrderHistory({ user }) {
     if (error) { alert('Error generating report'); return; }
     if (!data || data.length === 0) { alert('No records found for the selected range'); return; }
 
-    const headers = ['Date', 'Time', 'Order ID', 'Location', 'Amount', 'Payment', 'Status', 'Items', 'Staff Code', 'Staff Name', 'Collected Cash', 'Return Cash'];
+    const headers = [
+      'Date', 
+      'Time', 
+      'Order ID', 
+      'Location', 
+      'Amount', 
+      'Payment', 
+      'Status', 
+      'Items', 
+      'Order Collected By Code', 
+      'Order Collected By Name', 
+      'Order Delivered By Code', 
+      'Order Delivered By Name', 
+      'Collected Cash', 
+      'Return Cash'
+    ];
     const rows = data.map(o => {
         const d = new Date(o.timestamp);
         const items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
         const itemsList = items.map(i => `${i.quantity}x ${i.food_name || i.name}`).join('; ');
         
-        const staffCode = o.profiles?.employee_code || o.metadata?.staff_code || (o.staff_id ? 'EMP-' + o.staff_id.substring(0,6).toUpperCase() : 'N/A');
-        const staffName = o.profiles?.full_name || o.metadata?.staff_name || (o.metadata?.staff_email ? o.metadata.staff_email : 'Online / App');
+        const collectedCode = o.profiles?.employee_code || o.metadata?.staff_code || (o.staff_id ? 'EMP-' + o.staff_id.substring(0,6).toUpperCase() : 'N/A');
+        const collectedName = o.profiles?.full_name || o.metadata?.staff_name || (o.metadata?.staff_email ? o.metadata.staff_email : 'Online / App');
+
+        const deliveredCode = o.metadata?.delivered_by_code || (o.delivered_by ? 'EMP-' + o.delivered_by.substring(0,6).toUpperCase() : (o.status === 'DELIVERED' ? 'KDS' : 'N/A'));
+        const deliveredName = o.metadata?.delivered_by_name || (o.status === 'DELIVERED' ? 'Delivered' : 'Pending');
 
         return [
             d.toLocaleDateString(),
@@ -89,8 +107,10 @@ export default function OrderHistory({ user }) {
             o.payment_method,
             o.status,
             itemsList,
-            staffCode,
-            staffName,
+            collectedCode,
+            collectedName,
+            deliveredCode,
+            deliveredName,
             o.collected_cash || 0,
             o.return_cash || 0
         ];
@@ -350,7 +370,7 @@ export default function OrderHistory({ user }) {
       <div className="glass-card" style={{ padding: '16px', borderRadius: '16px', overflowX: 'hidden' }}>
         {/* Desktop Table */}
         <div className="oh-table-wrap">
-          <table className="data-table" style={{ minWidth: '600px' }}>
+          <table className="data-table" style={{ minWidth: '780px' }}>
             <thead>
               <tr>
                 <th>Order Info</th>
@@ -358,14 +378,16 @@ export default function OrderHistory({ user }) {
                 <th>Payment</th>
                 <th>Amount</th>
                 <th>Status</th>
+                <th>Order Collected By</th>
+                <th>Order Delivered By</th>
                 <th>Timestamp</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '48px' }}><div className="spinner" /></td></tr>
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '48px' }}><div className="spinner" /></td></tr>
               ) : orders.length === 0 ? (
-                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>No orders found matching your criteria.</td></tr>
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>No orders found matching your criteria.</td></tr>
               ) : orders.map(order => {
                 const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
                 const date = new Date(order.timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
@@ -387,21 +409,17 @@ export default function OrderHistory({ user }) {
                 const showCashInfo = isCashOrder && (collectedAmt > 0 || returnedAmt > 0);
                 const cashDifference = collectedAmt - returnedAmt;
 
+                const collectedCode = order.profiles?.employee_code || order.metadata?.staff_code || (order.staff_id ? 'EMP-' + order.staff_id.substring(0,6).toUpperCase() : null);
+                const collectedName = order.profiles?.full_name || order.metadata?.staff_name || (order.metadata?.staff_email ? order.metadata.staff_email : null);
+
+                const deliveredCode = order.metadata?.delivered_by_code || (order.delivered_by ? 'EMP-' + order.delivered_by.substring(0,6).toUpperCase() : null);
+                const deliveredName = order.metadata?.delivered_by_name || null;
+
                 return (
                   <tr key={order.id}>
                     <td>
                       <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{order.location}</div>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>#{order.display_id || order.id.substring(0,8).toUpperCase()}</div>
-                      {(order.profiles?.full_name || order.metadata?.staff_name || order.profiles?.employee_code || order.metadata?.staff_code || order.staff_id) ? (
-                        <div style={{ fontSize: '11px', color: 'var(--secondary-glow)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontFamily: 'monospace', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', background: 'rgba(0,210,255,0.1)', border: '1px solid rgba(0,210,255,0.25)', fontSize: '10px', letterSpacing: '0.5px' }}>
-                            {order.profiles?.employee_code || order.metadata?.staff_code || (order.staff_id ? 'EMP-' + order.staff_id.substring(0,6).toUpperCase() : 'STAFF')}
-                          </span>
-                          <span style={{ fontWeight: 600 }}>{order.profiles?.full_name || order.metadata?.staff_name || 'Staff'}</span>
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>📱 Online / App</div>
-                      )}
                     </td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -458,6 +476,59 @@ export default function OrderHistory({ user }) {
                         {order.status}
                       </span>
                     </td>
+                    <td>
+                      {collectedName || collectedCode ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <span style={{ 
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            fontFamily: 'monospace', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', 
+                            background: 'rgba(0,210,255,0.1)', border: '1px solid rgba(0,210,255,0.25)', 
+                            fontSize: '10px', color: 'var(--secondary-glow)', width: 'fit-content' 
+                          }}>
+                            {collectedCode || 'STAFF'}
+                          </span>
+                          <span style={{ fontWeight: 600, fontSize: '12px', color: 'white' }}>
+                            {collectedName || 'Staff Member'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>📱</span> <span>Online / App</span>
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {order.status === 'DELIVERED' ? (
+                        deliveredName || deliveredCode ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            <span style={{ 
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              fontFamily: 'monospace', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', 
+                              background: 'rgba(76, 175, 80, 0.12)', border: '1px solid rgba(76, 175, 80, 0.25)', 
+                              fontSize: '10px', color: '#4CAF50', width: 'fit-content' 
+                            }}>
+                              {deliveredCode || 'STAFF'}
+                            </span>
+                            <span style={{ fontWeight: 600, fontSize: '12px', color: 'white' }}>
+                              {deliveredName}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="badge" style={{ background: 'rgba(76, 175, 80, 0.1)', color: '#4CAF50', border: '1px solid rgba(76, 175, 80, 0.2)', fontSize: '11px' }}>
+                            ✓ Delivered (KDS)
+                          </span>
+                        )
+                      ) : order.status === 'CANCELLED' ? (
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>
+                      ) : (
+                        <span style={{ 
+                          padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '700',
+                          background: 'rgba(255, 152, 0, 0.1)', color: '#FF9800', border: '1px solid rgba(255, 152, 0, 0.2)'
+                        }}>
+                          ⏳ Pending Delivery
+                        </span>
+                      )}
+                    </td>
                     <td style={{ color: 'var(--text-muted)', fontSize: '12px', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Clock size={12} /> {date}</div>
                     </td>
@@ -502,18 +573,50 @@ export default function OrderHistory({ user }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="oh-card-location">{order.location}</div>
                     <div className="oh-card-id">#{order.display_id || order.id.substring(0,8).toUpperCase()}</div>
-                    {(order.profiles?.full_name || order.metadata?.staff_name || order.profiles?.employee_code || order.metadata?.staff_code || order.staff_id) ? (
-                      <div style={{ fontSize: '11px', color: 'var(--secondary-glow)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '10px' }}>
-                          [{order.profiles?.employee_code || order.metadata?.staff_code || (order.staff_id ? 'EMP-' + order.staff_id.substring(0,6).toUpperCase() : 'STAFF')}]
-                        </span>
-                        <span style={{ fontWeight: 600 }}>{order.profiles?.full_name || order.metadata?.staff_name || 'Staff'}</span>
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>📱 Online / App</div>
-                    )}
                   </div>
                   <div className="oh-card-amount">₹{order.total_amount}</div>
+                </div>
+
+                {/* Staff Tracking Row (Collected & Delivered) */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '8px',
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  borderRadius: '10px',
+                  padding: '8px 10px',
+                  fontSize: '11px'
+                }}>
+                  <div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800 }}>Collected By</div>
+                    {(order.profiles?.full_name || order.metadata?.staff_name || order.profiles?.employee_code || order.metadata?.staff_code || order.staff_id) ? (
+                      <div style={{ color: 'var(--secondary-glow)', fontWeight: 700, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>[{order.profiles?.employee_code || order.metadata?.staff_code || (order.staff_id ? 'EMP-' + order.staff_id.substring(0,6).toUpperCase() : 'STAFF')}]</span>
+                        <span style={{ color: 'white' }}>{order.profiles?.full_name || order.metadata?.staff_name || 'Staff'}</span>
+                      </div>
+                    ) : (
+                      <div style={{ color: 'var(--text-muted)', marginTop: '2px' }}>📱 Online / App</div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800 }}>Delivered By</div>
+                    {order.status === 'DELIVERED' ? (
+                      (order.metadata?.delivered_by_name || order.metadata?.delivered_by_code) ? (
+                        <div style={{ color: '#4CAF50', fontWeight: 700, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>[{order.metadata?.delivered_by_code || 'STAFF'}]</span>
+                          <span style={{ color: 'white' }}>{order.metadata?.delivered_by_name}</span>
+                        </div>
+                      ) : (
+                        <div style={{ color: '#4CAF50', fontWeight: 700, marginTop: '2px' }}>✓ Delivered</div>
+                      )
+                    ) : order.status === 'CANCELLED' ? (
+                      <div style={{ color: 'var(--text-muted)', marginTop: '2px' }}>Cancelled</div>
+                    ) : (
+                      <div style={{ color: '#FF9800', fontWeight: 700, marginTop: '2px' }}>⏳ In Progress</div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="oh-card-items">

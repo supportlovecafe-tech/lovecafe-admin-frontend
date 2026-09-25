@@ -129,17 +129,41 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
       is_delivered: newStatus === 'DELIVERED'
     }));
 
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus, items: updatedItems } : o));
+    const isDelivered = newStatus === 'DELIVERED';
+    const currentMeta = (order.metadata && typeof order.metadata === 'object') ? order.metadata : {};
+    const updatedMetadata = isDelivered ? {
+      ...currentMeta,
+      delivered_by: user?.id || null,
+      delivered_by_name: user?.full_name || user?.name || user?.email || 'Staff',
+      delivered_by_code: user?.employee_code || (user?.id ? 'EMP-' + user.id.substring(0, 6).toUpperCase() : 'STAFF'),
+      delivered_at: new Date().toISOString()
+    } : currentMeta;
+
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus, items: updatedItems, metadata: updatedMetadata } : o));
 
     try {
+      const updatePayload: any = { 
+        status: newStatus,
+        items: updatedItems
+      };
+      if (isDelivered) {
+        updatePayload.metadata = updatedMetadata;
+        if (user?.id) updatePayload.delivered_by = user.id;
+      }
+
       const { error } = await supabase
         .from('orders')
-        .update({ 
-          status: newStatus,
-          items: updatedItems
-        })
+        .update(updatePayload)
         .eq('id', orderId);
-      if (error) throw error;
+
+      if (error) {
+        if (error.message?.includes('delivered_by')) {
+          delete updatePayload.delivered_by;
+          await supabase.from('orders').update(updatePayload).eq('id', orderId);
+        } else {
+          throw error;
+        }
+      }
     } catch (e) {
       console.error("Failed to update status:", e);
       setOrders(previousOrders);
@@ -174,19 +198,42 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
       finalOrderStatus = 'PREPARING';
     }
 
+    const isDelivered = finalOrderStatus === 'DELIVERED';
+    const currentMeta = (order.metadata && typeof order.metadata === 'object') ? order.metadata : {};
+    const updatedMetadata = isDelivered ? {
+      ...currentMeta,
+      delivered_by: user?.id || null,
+      delivered_by_name: user?.full_name || user?.name || user?.email || 'Staff',
+      delivered_by_code: user?.employee_code || (user?.id ? 'EMP-' + user.id.substring(0, 6).toUpperCase() : 'STAFF'),
+      delivered_at: new Date().toISOString()
+    } : currentMeta;
+
     const previousOrders = [...orders];
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, status: finalOrderStatus } : o));
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, status: finalOrderStatus, metadata: updatedMetadata } : o));
 
     try {
+      const updatePayload: any = { 
+        items: updatedItems, 
+        status: finalOrderStatus 
+      };
+      if (isDelivered) {
+        updatePayload.metadata = updatedMetadata;
+        if (user?.id) updatePayload.delivered_by = user.id;
+      }
+
       const { error } = await supabase
         .from('orders')
-        .update({ 
-          items: updatedItems, 
-          status: finalOrderStatus 
-        })
+        .update(updatePayload)
         .eq('id', orderId);
         
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes('delivered_by')) {
+          delete updatePayload.delivered_by;
+          await supabase.from('orders').update(updatePayload).eq('id', orderId);
+        } else {
+          throw error;
+        }
+      }
     } catch (e) {
       console.error("Failed to update item status:", e);
       setOrders(previousOrders);
@@ -234,12 +281,35 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
       finalOrderStatus = 'PREPARING';
     }
 
+    const isDelivered = finalOrderStatus === 'DELIVERED';
+    const currentMeta = (order.metadata && typeof order.metadata === 'object') ? order.metadata : {};
+    const updatedMetadata = isDelivered ? {
+      ...currentMeta,
+      delivered_by: user?.id || null,
+      delivered_by_name: user?.full_name || user?.name || user?.email || 'Staff',
+      delivered_by_code: user?.employee_code || (user?.id ? 'EMP-' + user.id.substring(0, 6).toUpperCase() : 'STAFF'),
+      delivered_at: new Date().toISOString()
+    } : currentMeta;
+
     const previousOrders = [...orders];
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, status: finalOrderStatus } : o));
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, status: finalOrderStatus, metadata: updatedMetadata } : o));
 
     try {
-      const { error } = await supabase.from('orders').update({ items: updatedItems, status: finalOrderStatus }).eq('id', orderId);
-      if (error) throw error;
+      const updatePayload: any = { items: updatedItems, status: finalOrderStatus };
+      if (isDelivered) {
+        updatePayload.metadata = updatedMetadata;
+        if (user?.id) updatePayload.delivered_by = user.id;
+      }
+
+      const { error } = await supabase.from('orders').update(updatePayload).eq('id', orderId);
+      if (error) {
+        if (error.message?.includes('delivered_by')) {
+          delete updatePayload.delivered_by;
+          await supabase.from('orders').update(updatePayload).eq('id', orderId);
+        } else {
+          throw error;
+        }
+      }
     } catch (e) {
       console.error("Failed to toggle delivery status:", e);
       setOrders(previousOrders);
