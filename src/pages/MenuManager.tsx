@@ -75,8 +75,8 @@ const DEFAULT_CATEGORIES: CategoryItem[] = [
   { key: 'MILKSHAKE', label: '🥤 Milkshake', section: 'READY_FOOD' },
   { key: 'ICE_CREAM', label: '🍦 Ice Cream', section: 'READY_FOOD' },
   { key: 'BEVERAGES', label: '🧃 Beverages', section: 'READY_FOOD' },
-  { key: 'BOBA', label: '🧋 Boba', section: 'READY_FOOD' },
-  { key: 'NACHOS', label: '🧀 Nachos', section: 'READY_FOOD' },
+  { key: 'Boba', label: '🧋 Boba', section: 'READY_FOOD' },
+  { key: 'Nachos', label: '🧀 Nachos', section: 'READY_FOOD' },
   { key: 'LOVE_SPECIAL', label: '❤️ Love Special', section: 'READY_FOOD' },
   // Kitchen Foods
   { key: 'SNACKS', label: '🍟 Snacks', section: 'KITCHEN_FOOD' },
@@ -129,8 +129,8 @@ export default function MenuManager({ user }: { user: any }) {
   // Combined categories
   const allCategoryList = React.useMemo(() => {
     const map = new Map<string, CategoryItem>();
-    DEFAULT_CATEGORIES.forEach(c => map.set(c.key, c));
-    customCategories.forEach(c => map.set(c.key, c));
+    DEFAULT_CATEGORIES.forEach(c => map.set(c.key.toUpperCase(), c));
+    customCategories.forEach(c => map.set(c.key.toUpperCase(), c));
 
     // Also pick up any category existing in foods that isn't mapped yet
     foods.forEach(f => {
@@ -141,7 +141,7 @@ export default function MenuManager({ user }: { user: any }) {
           || f.food_type === 'READY_FOOD';
         const { emoji, name } = extractEmojiAndName(rawCat);
         map.set(catKey, {
-          key: catKey,
+          key: name,
           label: `${emoji} ${name}`,
           section: isReady ? 'READY_FOOD' : 'KITCHEN_FOOD'
         });
@@ -167,7 +167,7 @@ export default function MenuManager({ user }: { user: any }) {
     }
     const emoji = editEmoji.trim() || '🍽️';
     const newLabel = `${emoji} ${trimmed}`;
-    const newKey = trimmed.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+    const newKey = trimmed;
 
     setIsSavingCategory(true);
     try {
@@ -258,12 +258,7 @@ export default function MenuManager({ user }: { user: any }) {
     const trimmed = newCatName.trim();
     if (!trimmed) return;
 
-    const formattedKey = trimmed.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
-    if (!formattedKey) {
-      alert('Please enter a valid category name.');
-      return;
-    }
-
+    const formattedKey = trimmed;
     const emoji = (newCatEmoji || '').trim() || '🍽️';
     const newCategory: CategoryItem = {
       key: formattedKey,
@@ -271,7 +266,7 @@ export default function MenuManager({ user }: { user: any }) {
       section: newCatSection
     };
 
-    const updated = [...customCategories.filter(c => c.key !== formattedKey), newCategory];
+    const updated = [...customCategories.filter(c => c.key.toUpperCase() !== formattedKey.toUpperCase()), newCategory];
     setCustomCategories(updated);
     try {
       localStorage.setItem('cinema_custom_categories', JSON.stringify(updated));
