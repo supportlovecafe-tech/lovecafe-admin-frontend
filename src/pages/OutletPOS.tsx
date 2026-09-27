@@ -429,6 +429,43 @@ export default function OutletPOS({ user }: { user: any }) {
     }
   }, [total, paymentMode]);
 
+  // Helper to compute convenient round-return options when customer tenders a note larger than bill
+  const getChangeAssistOptions = (tendered: number, billTotal: number) => {
+    const rawChange = Math.round((tendered - billTotal) * 100) / 100;
+    if (rawChange <= 0) return [];
+
+    const candidateTargets: number[] = [];
+    const standardMilestones = [20, 50, 100, 150, 200, 250, 300, 400, 500, 1000];
+    
+    for (const m of standardMilestones) {
+      if (m > rawChange && m <= (tendered + 100)) {
+        candidateTargets.push(m);
+      }
+    }
+
+    // Pick top 2 most practical closest return notes
+    return candidateTargets.slice(0, 2).map(target => {
+      const extraUpi = Math.round((target - rawChange) * 100) / 100;
+      const cashPortion = Math.max(0, Math.round((billTotal - extraUpi) * 100) / 100);
+      return {
+        targetReturn: target,
+        extraUpi,
+        cashPortion
+      };
+    });
+  };
+
+  const applyChangeAssist = (tendered: number, targetReturn: number) => {
+    const rawChange = Math.round((tendered - total) * 100) / 100;
+    const upiAmount = Math.round((targetReturn - rawChange) * 100) / 100;
+    const cashPortion = Math.max(0, Math.round((total - upiAmount) * 100) / 100);
+
+    setPaymentMode('Split');
+    setSplitCash(cashPortion % 1 === 0 ? cashPortion.toString() : cashPortion.toFixed(2));
+    setSplitUpi(upiAmount % 1 === 0 ? upiAmount.toString() : upiAmount.toFixed(2));
+    setSplitCollectedCash(tendered.toString());
+  };
+
   // Validation helpers for Split Payment
   const isSplitMode = paymentMode === 'Split';
   const numSplitCash = isSplitMode ? (parseFloat(splitCash) || 0) : 0;
@@ -1166,6 +1203,62 @@ export default function OutletPOS({ user }: { user: any }) {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Smart Change Assist: When customer tenders extra cash note and register lacks odd change */}
+                                {collectedCash && Number(collectedCash) > total && (() => {
+                                    const tendered = Number(collectedCash);
+                                    const options = getChangeAssistOptions(tendered, total);
+                                    if (options.length === 0) return null;
+                                    const rawChange = Math.round((tendered - total) * 100) / 100;
+                                    return (
+                                        <div style={{
+                                            marginTop: '10px',
+                                            padding: '10px 12px',
+                                            borderRadius: '10px',
+                                            background: 'linear-gradient(135deg, rgba(255, 184, 0, 0.08) 0%, rgba(0, 210, 255, 0.08) 100%)',
+                                            border: '1px solid rgba(255, 184, 0, 0.3)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '8px'
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                                                <span style={{ color: 'var(--accent-gold)', fontWeight: 800 }}>
+                                                    ⚡ Short on ₹{rawChange % 1 === 0 ? rawChange : rawChange.toFixed(2)} in small change?
+                                                </span>
+                                                <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+                                                    Smart Split Assist
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                {options.map((opt, i) => (
+                                                    <button
+                                                        key={i}
+                                                        type="button"
+                                                        onClick={() => applyChangeAssist(tendered, opt.targetReturn)}
+                                                        className="pos-quick-cash-btn"
+                                                        style={{
+                                                            background: 'rgba(0, 210, 255, 0.12)',
+                                                            borderColor: 'rgba(0, 210, 255, 0.5)',
+                                                            color: '#00d2ff',
+                                                            padding: '6px 10px',
+                                                            fontSize: '11px',
+                                                            fontWeight: 800,
+                                                            borderRadius: '8px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '6px',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        <span>Ask ₹{opt.extraUpi} UPI</span>
+                                                        <ArrowRight size={11} />
+                                                        <span style={{ color: '#4ade80' }}>Return ₹{opt.targetReturn} Note</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         )}
 
@@ -1225,6 +1318,58 @@ export default function OutletPOS({ user }: { user: any }) {
                                         />
                                     </div>
                                 </div>
+
+                                {/* Helper when cashier entered a tendered note amount greater than total in Cash box */}
+                                {splitCash !== '' && parseFloat(splitCash) > total && (() => {
+                                    const tendered = parseFloat(splitCash);
+                                    const options = getChangeAssistOptions(tendered, total);
+                                    const rawChange = Math.round((tendered - total) * 100) / 100;
+                                    return (
+                                        <div style={{
+                                            padding: '8px 10px',
+                                            borderRadius: '8px',
+                                            background: 'rgba(255, 184, 0, 0.1)',
+                                            border: '1px solid rgba(255, 184, 0, 0.3)',
+                                            fontSize: '11px',
+                                            color: 'var(--accent-gold)'
+                                        }}>
+                                            <div style={{ fontWeight: 700, marginBottom: '4px' }}>
+                                                Customer handed ₹{tendered} note? (Bill is ₹{total.toFixed(2)})
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setCollectedCash(tendered.toString());
+                                                        setPaymentMode('Cash');
+                                                    }}
+                                                    className="pos-quick-cash-btn"
+                                                    style={{ fontSize: '10px', padding: '3px 8px' }}
+                                                >
+                                                    Full Cash (Return ₹{rawChange.toFixed(2)})
+                                                </button>
+                                                {options.map((opt, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        type="button"
+                                                        onClick={() => applyChangeAssist(tendered, opt.targetReturn)}
+                                                        className="pos-quick-cash-btn"
+                                                        style={{
+                                                            background: 'rgba(0, 210, 255, 0.15)',
+                                                            borderColor: '#00d2ff',
+                                                            color: '#00d2ff',
+                                                            fontSize: '10px',
+                                                            fontWeight: 800,
+                                                            padding: '3px 8px'
+                                                        }}
+                                                    >
+                                                        Ask ₹{opt.extraUpi} UPI ➔ Return ₹{opt.targetReturn} Note
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Real-time Summary Badge */}
                                 <div style={{ 
@@ -1319,6 +1464,39 @@ export default function OutletPOS({ user }: { user: any }) {
                                                 </div>
                                             </div>
                                         </div>
+
+                                        {/* If tendered cash in split mode has odd change, offer 1-click round change optimization */}
+                                        {splitCollectedCash && Number(splitCollectedCash) > total && (() => {
+                                            const tendered = Number(splitCollectedCash);
+                                            const options = getChangeAssistOptions(tendered, total);
+                                            if (options.length === 0) return null;
+                                            return (
+                                                <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                                    <span style={{ fontSize: '10px', color: 'var(--accent-gold)', fontWeight: 700 }}>
+                                                        Need round return?
+                                                    </span>
+                                                    {options.map((opt, idx) => (
+                                                        <button
+                                                            key={idx}
+                                                            type="button"
+                                                            onClick={() => applyChangeAssist(tendered, opt.targetReturn)}
+                                                            className="pos-quick-cash-btn"
+                                                            style={{
+                                                                background: 'rgba(0, 210, 255, 0.12)',
+                                                                borderColor: 'rgba(0, 210, 255, 0.5)',
+                                                                color: '#00d2ff',
+                                                                fontSize: '10px',
+                                                                fontWeight: 800,
+                                                                padding: '3px 8px',
+                                                                borderRadius: '6px'
+                                                            }}
+                                                        >
+                                                            Ask ₹{opt.extraUpi} UPI ➔ Return ₹{opt.targetReturn} Note
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 )}
                             </div>
@@ -1580,13 +1758,25 @@ export default function OutletPOS({ user }: { user: any }) {
                                         {lastOrder.payment_method === 'POS_SPLIT' && (
                                             <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '6px', margin: '6px 0', border: '1px dashed #cbd5e1' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px', fontWeight: 700 }}>
-                                                    <span>💵 Cash Paid:</span>
+                                                    <span>💵 Cash (Bill Portion):</span>
                                                     <span>₹{Number(lastOrder.metadata?.split_cash || 0).toFixed(2)}</span>
                                                 </div>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
                                                     <span>📱 UPI Paid:</span>
                                                     <span>₹{Number(lastOrder.metadata?.split_upi || 0).toFixed(2)}</span>
                                                 </div>
+                                                {lastOrder.collected_cash > (lastOrder.metadata?.split_cash || 0) && (
+                                                    <div style={{ borderTop: '1px dashed #cbd5e1', marginTop: '5px', paddingTop: '5px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b' }}>
+                                                            <span>Cash Tendered:</span>
+                                                            <span>₹{Number(lastOrder.collected_cash).toFixed(2)}</span>
+                                                        </div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '12px', color: '#16a34a', marginTop: '2px' }}>
+                                                            <span>Change Returned:</span>
+                                                            <span>₹{Number(lastOrder.return_cash).toFixed(2)}</span>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 
@@ -1599,19 +1789,6 @@ export default function OutletPOS({ user }: { user: any }) {
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '13px', background: '#f0fdf4', padding: '3px 6px', borderRadius: '4px' }}>
                                                     <span>Change Returned</span>
                                                     <span>₹{Number(lastOrder.return_cash || 0).toFixed(2)}</span>
-                                                </div>
-                                            </>
-                                        )}
-
-                                        {lastOrder.payment_method === 'POS_SPLIT' && lastOrder.collected_cash > (lastOrder.metadata?.split_cash || 0) && (
-                                            <>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                                                    <span>Cash Tendered</span>
-                                                    <span>₹{Number(lastOrder.collected_cash).toFixed(2)}</span>
-                                                </div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '13px', background: '#f0fdf4', padding: '3px 6px', borderRadius: '4px' }}>
-                                                    <span>Change Returned</span>
-                                                    <span>₹{Number(lastOrder.return_cash).toFixed(2)}</span>
                                                 </div>
                                             </>
                                         )}
