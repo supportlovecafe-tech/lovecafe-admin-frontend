@@ -7,8 +7,6 @@ export default function OrderHistory({ user }) {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [screenFilter, setScreenFilter] = useState('ALL');
-  const [screens, setScreens] = useState([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [page, setPage] = useState(0);
@@ -18,20 +16,13 @@ export default function OrderHistory({ user }) {
 
   useEffect(() => {
     fetchOrders();
-  }, [page, statusFilter, screenFilter, startDate, endDate]);
-
-  useEffect(() => {
-    if (user.cinema_id && user.cinema_id !== 'default') {
-      if (!cinemaName) {
-        supabase.from('cinemas').select('name').eq('id', user.cinema_id).single().then(({data}) => {
-          if (data) setCinemaName(data.name);
-        });
-      }
-      supabase.from('screens').select('name').eq('cinema_id', user.cinema_id).order('name').then(({data}) => {
-        if (data) setScreens(data.map(s => s.name));
+    
+    if (!cinemaName && user.cinema_id && user.cinema_id !== 'default') {
+      supabase.from('cinemas').select('name').eq('id', user.cinema_id).single().then(({data}) => {
+        if (data) setCinemaName(data.name);
       });
     }
-  }, [user.cinema_id, cinemaName]);
+  }, [page, statusFilter, startDate, endDate]);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -45,27 +36,12 @@ export default function OrderHistory({ user }) {
         query = query.eq('status', statusFilter);
     }
 
-    if (screenFilter !== 'ALL') {
-        // Screen name is embedded in location string. 
-        query = query.or(`location.ilike.%${screenFilter} •%,location.ilike.%${screenFilter},%,location.ilike.%${screenFilter}%`);
-    }
-
-    // Convert YYYY-MM-DD to IST bounds for queries
-    const getISTStart = (dateStr) => {
-      if (!dateStr) return null;
-      return new Date(new Date(dateStr).getTime() - 19800000).toISOString();
-    };
-    const getISTEnd = (dateStr) => {
-      if (!dateStr) return null;
-      return new Date(new Date(dateStr).getTime() + 66599999).toISOString();
-    };
-
     if (startDate) {
-        query = query.gte('timestamp', getISTStart(startDate));
+        query = query.gte('timestamp', startDate);
     }
 
     if (endDate) {
-        query = query.lte('timestamp', getISTEnd(endDate));
+        query = query.lte('timestamp', endDate + 'T23:59:59');
     }
 
     if (searchTerm) {
@@ -86,11 +62,8 @@ export default function OrderHistory({ user }) {
     if (user.cinema_id && user.cinema_id !== 'default') {
         query = query.eq('cinema_id', user.cinema_id);
     }
-    const getISTStart = (dateStr) => dateStr ? new Date(new Date(dateStr).getTime() - 19800000).toISOString() : null;
-    const getISTEnd = (dateStr) => dateStr ? new Date(new Date(dateStr).getTime() + 66599999).toISOString() : null;
-
-    if (startDate) query = query.gte('timestamp', getISTStart(startDate));
-    if (endDate) query = query.lte('timestamp', getISTEnd(endDate));
+    if (startDate) query = query.gte('timestamp', startDate);
+    if (endDate) query = query.lte('timestamp', endDate + 'T23:59:59');
     if (statusFilter !== 'ALL') query = query.eq('status', statusFilter);
 
     const { data, error } = await query.order('timestamp', { ascending: false });
@@ -126,8 +99,8 @@ export default function OrderHistory({ user }) {
         const deliveredName = o.metadata?.delivered_by_name || (o.status === 'DELIVERED' ? 'Delivered' : 'Pending');
 
         return [
-            d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }),
-            d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
+            d.toLocaleDateString(),
+            d.toLocaleTimeString(),
             o.display_id || 'N/A',
             o.location,
             o.total_amount,
@@ -370,19 +343,6 @@ export default function OrderHistory({ user }) {
               <option value="CANCELLED">Cancelled</option>
             </select>
           </div>
-          <div className="oh-status-wrap">
-            <select
-              className="input-premium"
-              value={screenFilter}
-              onChange={e => { setScreenFilter(e.target.value); setPage(0); }}
-              style={{ appearance: 'none', width: '100%', boxSizing: 'border-box' }}
-            >
-              <option value="ALL">All Screens</option>
-              {screens.map(screenName => (
-                <option key={screenName} value={screenName}>{screenName}</option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {/* Date Range */}
@@ -430,7 +390,7 @@ export default function OrderHistory({ user }) {
                 <tr><td colSpan="8" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>No orders found matching your criteria.</td></tr>
               ) : orders.map(order => {
                 const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-                const date = new Date(order.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+                const date = new Date(order.timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
                 
                 const isPosCash = order.payment_method === 'POS_CASH';
                 const isPosSplit = order.payment_method === 'POS_SPLIT';
@@ -587,7 +547,7 @@ export default function OrderHistory({ user }) {
             <div style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>No orders found matching your criteria.</div>
           ) : orders.map(order => {
             const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-            const date = new Date(order.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' });
+            const date = new Date(order.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
             const sc = getStatusColor(order.status);
 
             const isPosCash = order.payment_method === 'POS_CASH';

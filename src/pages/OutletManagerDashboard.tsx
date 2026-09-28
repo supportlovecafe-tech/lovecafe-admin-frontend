@@ -869,7 +869,7 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
   const urgency = getUrgencyConfig();
   const rawTime = order.timestamp;
   const utcDate = rawTime?.endsWith('Z') || rawTime?.includes('+') ? new Date(rawTime) : new Date(rawTime + 'Z');
-  const timeStr = utcDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const timeStr = utcDate.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
   const displayOrderId = order.display_id || order.id?.substring(0,6).toUpperCase();
   const customerName = order.customer_profiles ? `${order.customer_profiles.first_name} ${order.customer_profiles.last_name}` : 'Demo Customer';
 

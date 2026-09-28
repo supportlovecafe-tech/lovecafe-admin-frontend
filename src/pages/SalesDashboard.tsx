@@ -114,8 +114,17 @@ const ChartContainer = ({ title, children, loading, headerAction, height }: any)
 export default function SalesDashboard({ user }: { user: any }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
-  const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const getISTNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const toDateStr = (d: Date) => {
+    const pad = (n: number) => n < 10 ? '0' + n : n;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+  const [startDate, setStartDate] = useState(() => {
+    const d = getISTNow();
+    d.setDate(d.getDate() - 30);
+    return toDateStr(d);
+  });
+  const [endDate, setEndDate] = useState(() => toDateStr(getISTNow()));
   const [showFilter, setShowFilter] = useState(false);
   const [topProductMetric, setTopProductMetric] = useState<'revenue' | 'quantity'>('revenue');
 
@@ -177,8 +186,8 @@ export default function SalesDashboard({ user }: { user: any }) {
             .select('total_amount')
             .eq('cinema_id', cinemaId)
             .not('status', 'in', '("CANCELLED","REFUNDED")')
-            .gte('created_at', t.start_date + 'T00:00:00Z')
-            .lte('created_at', t.end_date + 'T23:59:59Z');
+            .gte('created_at', new Date(new Date(t.start_date).getTime() - 19800000).toISOString())
+            .lte('created_at', new Date(new Date(t.end_date).getTime() + 66599999).toISOString());
 
           const total = (orderData || []).reduce((sum: number, o: any) => sum + (Number(o.total_amount) || 0), 0);
           progressMap[t.id] = { achieved: total, orders: orderData?.length || 0 };
@@ -320,16 +329,19 @@ export default function SalesDashboard({ user }: { user: any }) {
     if (!cinemaId || cinemaId === 'default') return;
     setLoading(true);
     try {
+      const startIso = startDate ? new Date(new Date(startDate).getTime() - 19800000).toISOString() : null;
+      const endIso = endDate ? new Date(new Date(endDate).getTime() + 66599999).toISOString() : null;
+
       const [analyticsRes, staffReportRes] = await Promise.all([
         supabase.rpc('get_sales_analytics', {
           p_cinema_id: cinemaId,
-          p_start_date: startDate + 'T00:00:00Z',
-          p_end_date: endDate + 'T23:59:59Z'
+          p_start_date: startIso,
+          p_end_date: endIso
         }),
         supabase.rpc('get_staff_sales_report', {
           p_cinema_id: cinemaId,
-          p_start_date: startDate + 'T00:00:00Z',
-          p_end_date: endDate + 'T23:59:59Z'
+          p_start_date: startIso,
+          p_end_date: endIso
         })
       ]);
 
@@ -378,34 +390,32 @@ export default function SalesDashboard({ user }: { user: any }) {
   }, [data]);
 
   const setDatePreset = (preset: 'today' | 'yesterday' | '7days' | '30days' | 'this_month') => {
-    const now = new Date();
-    const pad = (n: number) => n < 10 ? '0' + n : n;
-    const toStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-
+    const now = getISTNow();
+    
     if (preset === 'today') {
-      const todayStr = toStr(now);
+      const todayStr = toDateStr(now);
       setStartDate(todayStr);
       setEndDate(todayStr);
     } else if (preset === 'yesterday') {
       const yest = new Date(now);
       yest.setDate(yest.getDate() - 1);
-      const yestStr = toStr(yest);
+      const yestStr = toDateStr(yest);
       setStartDate(yestStr);
       setEndDate(yestStr);
     } else if (preset === '7days') {
       const past7 = new Date(now);
       past7.setDate(past7.getDate() - 7);
-      setStartDate(toStr(past7));
-      setEndDate(toStr(now));
+      setStartDate(toDateStr(past7));
+      setEndDate(toDateStr(now));
     } else if (preset === '30days') {
       const past30 = new Date(now);
       past30.setDate(past30.getDate() - 30);
-      setStartDate(toStr(past30));
-      setEndDate(toStr(now));
+      setStartDate(toDateStr(past30));
+      setEndDate(toDateStr(now));
     } else if (preset === 'this_month') {
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      setStartDate(toStr(firstDay));
-      setEndDate(toStr(now));
+      setStartDate(toDateStr(firstDay));
+      setEndDate(toDateStr(now));
     }
     setShowFilter(false);
   };
@@ -797,7 +807,7 @@ export default function SalesDashboard({ user }: { user: any }) {
               stroke="var(--text-muted)" 
               fontSize={10} 
               interval="preserveStartEnd"
-              tickFormatter={(val) => new Date(val).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+              tickFormatter={(val) => new Date(val).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric' })}
             />
             <YAxis yAxisId="left" stroke="var(--text-muted)" fontSize={10} width={38} tickFormatter={(val) => `₹${val >= 1000 ? (val/1000).toFixed(1) + 'k' : val}`} />
             <YAxis yAxisId="right" orientation="right" stroke="var(--text-muted)" fontSize={10} width={25} />

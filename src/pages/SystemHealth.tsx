@@ -119,7 +119,7 @@ export default function SystemHealthDashboard() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
                     <Clock size={14} /> 
                     {stats.services.redis.last_worker_run !== 'NEVER' 
-                      ? new Date(stats.services.redis.last_worker_run).toLocaleString() 
+                      ? new Date(stats.services.redis.last_worker_run).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) 
                       : 'Disconnected'}
                   </div>
                 </div>

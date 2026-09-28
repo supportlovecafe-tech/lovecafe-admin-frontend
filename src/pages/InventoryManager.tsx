@@ -741,7 +741,7 @@ export default function InventoryManager({ user }: { user: any }) {
                       return (
                         <tr key={tx.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                           <td style={{ padding: '16px 24px', fontSize: 13, color: 'var(--text-muted)' }}>
-                            {new Date(tx.created_at).toLocaleString()}
+                            {new Date(tx.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
                           </td>
                           <td style={{ padding: '16px 24px', fontSize: 13, fontWeight: 700, color: 'white' }}>
                             {tx.inventory_items?.item_name || 'Deleted Item'}

@@ -14,8 +14,14 @@ export default function StaffBonusDashboard({ user }) {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Date range filter
-  const todayStr = new Date().toISOString().split('T')[0];
-  const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const getISTNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const toDateStr = (d) => {
+    const pad = (n) => n < 10 ? '0' + n : n;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
+  const todayStr = toDateStr(getISTNow());
+  const firstOfMonth = toDateStr(new Date(getISTNow().getFullYear(), getISTNow().getMonth(), 1));
   
   const [datePreset, setDatePreset] = useState('month'); // today, 7days, month, 30days, all, custom
   const [startDate, setStartDate] = useState(firstOfMonth);
@@ -45,21 +51,23 @@ export default function StaffBonusDashboard({ user }) {
 
   const handleDatePresetChange = (preset) => {
     setDatePreset(preset);
-    const now = new Date();
+    const now = getISTNow();
     if (preset === 'today') {
-      const d = now.toISOString().split('T')[0];
+      const d = toDateStr(now);
       setStartDate(d);
       setEndDate(d);
     } else if (preset === '7days') {
-      const d = new Date(now.setDate(now.getDate() - 7)).toISOString().split('T')[0];
-      setStartDate(d);
+      const past7 = new Date(now);
+      past7.setDate(past7.getDate() - 7);
+      setStartDate(toDateStr(past7));
       setEndDate(todayStr);
     } else if (preset === 'month') {
       setStartDate(firstOfMonth);
       setEndDate(todayStr);
     } else if (preset === '30days') {
-      const d = new Date(now.setDate(now.getDate() - 30)).toISOString().split('T')[0];
-      setStartDate(d);
+      const past30 = new Date(now);
+      past30.setDate(past30.getDate() - 30);
+      setStartDate(toDateStr(past30));
       setEndDate(todayStr);
     } else if (preset === 'all') {
       setStartDate('2024-01-01');
@@ -70,10 +78,13 @@ export default function StaffBonusDashboard({ user }) {
   const fetchReport = async () => {
     setLoading(true);
     try {
+      const startIso = startDate ? new Date(new Date(startDate).getTime() - 19800000).toISOString() : null;
+      const endIso = endDate ? new Date(new Date(endDate).getTime() + 66599999).toISOString() : null;
+
       const params = {
         p_cinema_id: selectedCinemaId || null,
-        p_start_date: startDate ? `${startDate}T00:00:00Z` : null,
-        p_end_date: endDate ? `${endDate}T23:59:59Z` : null
+        p_start_date: startIso,
+        p_end_date: endIso
       };
 
       const { data, error } = await supabase.rpc('get_staff_sales_report', params);
@@ -100,9 +111,12 @@ export default function StaffBonusDashboard({ user }) {
         .select('id, cinema_id, total_amount, collected_cash, timestamp, status, staff_id, metadata, cinemas(id, name), profiles:staff_id(id, full_name, employee_code, role)')
         .neq('status', 'CANCELLED');
 
+      const startIso = startDate ? new Date(new Date(startDate).getTime() - 19800000).toISOString() : null;
+      const endIso = endDate ? new Date(new Date(endDate).getTime() + 66599999).toISOString() : null;
+
       if (selectedCinemaId) q = q.eq('cinema_id', selectedCinemaId);
-      if (startDate) q = q.gte('timestamp', `${startDate}T00:00:00Z`);
-      if (endDate) q = q.lte('timestamp', `${endDate}T23:59:59Z`);
+      if (startIso) q = q.gte('timestamp', startIso);
+      if (endIso) q = q.lte('timestamp', endIso);
 
       const { data: orders, error } = await q;
       if (error) throw error;

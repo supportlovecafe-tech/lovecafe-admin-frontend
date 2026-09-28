@@ -1658,7 +1658,7 @@ export default function OutletPOS({ user }: { user: any }) {
                                             Order: {lastOrder.display_id}
                                         </div>
                                         <div style={{ fontSize: '11px', marginTop: '6px', color: '#444' }}>
-                                            {new Date(lastOrder.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} • {new Date(lastOrder.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                            {new Date(lastOrder.timestamp).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })} • {new Date(lastOrder.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                                         </div>
                                         <div style={{ fontSize: '12px', fontWeight: 800, marginTop: '4px' }}>
                                             {lastOrder.location}
@@ -1811,7 +1811,7 @@ export default function OutletPOS({ user }: { user: any }) {
                                             Order: {lastOrder.display_id}
                                         </div>
                                         <div style={{ fontSize: '12px', marginTop: '6px', fontWeight: 700 }}>
-                                            {new Date(lastOrder.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            {new Date(lastOrder.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}
                                         </div>
                                         <div style={{ fontSize: '14px', fontWeight: 900, marginTop: '4px', background: '#fef08a', padding: '2px 8px', display: 'inline-block' }}>
                                             {lastOrder.location}
