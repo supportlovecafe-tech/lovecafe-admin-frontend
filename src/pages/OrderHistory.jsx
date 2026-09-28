@@ -7,6 +7,8 @@ export default function OrderHistory({ user }) {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [screenFilter, setScreenFilter] = useState('ALL');
+  const [screens, setScreens] = useState([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [page, setPage] = useState(0);
@@ -16,13 +18,20 @@ export default function OrderHistory({ user }) {
 
   useEffect(() => {
     fetchOrders();
-    
-    if (!cinemaName && user.cinema_id && user.cinema_id !== 'default') {
-      supabase.from('cinemas').select('name').eq('id', user.cinema_id).single().then(({data}) => {
-        if (data) setCinemaName(data.name);
+  }, [page, statusFilter, screenFilter, startDate, endDate]);
+
+  useEffect(() => {
+    if (user.cinema_id && user.cinema_id !== 'default') {
+      if (!cinemaName) {
+        supabase.from('cinemas').select('name').eq('id', user.cinema_id).single().then(({data}) => {
+          if (data) setCinemaName(data.name);
+        });
+      }
+      supabase.from('screens').select('name').eq('cinema_id', user.cinema_id).order('name').then(({data}) => {
+        if (data) setScreens(data.map(s => s.name));
       });
     }
-  }, [page, statusFilter, startDate, endDate]);
+  }, [user.cinema_id, cinemaName]);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -34,6 +43,11 @@ export default function OrderHistory({ user }) {
 
     if (statusFilter !== 'ALL') {
         query = query.eq('status', statusFilter);
+    }
+
+    if (screenFilter !== 'ALL') {
+        // Screen name is embedded in location string. 
+        query = query.or(`location.ilike.%${screenFilter} •%,location.ilike.%${screenFilter},%,location.ilike.%${screenFilter}%`);
     }
 
     if (startDate) {
@@ -341,6 +355,19 @@ export default function OrderHistory({ user }) {
               <option value="READY">Ready</option>
               <option value="DELIVERED">Delivered</option>
               <option value="CANCELLED">Cancelled</option>
+            </select>
+          </div>
+          <div className="oh-status-wrap">
+            <select
+              className="input-premium"
+              value={screenFilter}
+              onChange={e => { setScreenFilter(e.target.value); setPage(0); }}
+              style={{ appearance: 'none', width: '100%', boxSizing: 'border-box' }}
+            >
+              <option value="ALL">All Screens</option>
+              {screens.map(screenName => (
+                <option key={screenName} value={screenName}>{screenName}</option>
+              ))}
             </select>
           </div>
         </div>
