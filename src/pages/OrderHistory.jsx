@@ -115,7 +115,8 @@ export default function OrderHistory({ user }) {
       'Return Cash'
     ];
     const rows = data.map(o => {
-        const d = new Date(o.timestamp);
+        const rawTime = o.timestamp;
+        const d = rawTime?.endsWith('Z') || rawTime?.includes('+') ? new Date(rawTime) : new Date(rawTime + 'Z');
         const items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
         const itemsList = items.map(i => `${i.quantity}x ${i.food_name || i.name}`).join('; ');
         
@@ -430,7 +431,9 @@ export default function OrderHistory({ user }) {
                 <tr><td colSpan="8" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>No orders found matching your criteria.</td></tr>
               ) : orders.map(order => {
                 const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-                const date = new Date(order.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+                const rawTime = order.timestamp;
+                const utcDate = rawTime?.endsWith('Z') || rawTime?.includes('+') ? new Date(rawTime) : new Date(rawTime + 'Z');
+                const date = utcDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
                 
                 const isPosCash = order.payment_method === 'POS_CASH';
                 const isPosSplit = order.payment_method === 'POS_SPLIT';
@@ -587,7 +590,9 @@ export default function OrderHistory({ user }) {
             <div style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>No orders found matching your criteria.</div>
           ) : orders.map(order => {
             const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-            const date = new Date(order.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' });
+            const rawTime = order.timestamp;
+            const utcDate = rawTime?.endsWith('Z') || rawTime?.includes('+') ? new Date(rawTime) : new Date(rawTime + 'Z');
+            const date = utcDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' });
             const sc = getStatusColor(order.status);
 
             const isPosCash = order.payment_method === 'POS_CASH';
