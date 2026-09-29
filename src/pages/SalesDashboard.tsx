@@ -186,8 +186,8 @@ export default function SalesDashboard({ user }: { user: any }) {
             .select('total_amount')
             .eq('cinema_id', cinemaId)
             .not('status', 'in', '("CANCELLED","REFUNDED")')
-            .gte('created_at', new Date(new Date(t.start_date).getTime() - 19800000).toISOString())
-            .lte('created_at', new Date(new Date(t.end_date).getTime() + 66599999).toISOString());
+            .gte('timestamp', new Date(new Date(t.start_date).getTime() - 19800000).toISOString())
+            .lte('timestamp', new Date(new Date(t.end_date).getTime() + 66599999).toISOString());
 
           const total = (orderData || []).reduce((sum: number, o: any) => sum + (Number(o.total_amount) || 0), 0);
           progressMap[t.id] = { achieved: total, orders: orderData?.length || 0 };
