@@ -60,6 +60,9 @@ export default function OutletPOS({ user }: { user: any }) {
   const [customizingItem, setCustomizingItem] = useState<any | null>(null);
   const [customizingSelections, setCustomizingSelections] = useState<Record<string, string[]>>({});
 
+  // Screens List for Dropdown
+  const [screensList, setScreensList] = useState<string[]>([]);
+
   // Restore Cart & Outbox on mount
   useEffect(() => {
     const savedCart = localStorage.getItem(STORAGE_KEYS.CART);
@@ -77,6 +80,12 @@ export default function OutletPOS({ user }: { user: any }) {
         setCustomerPhone(phone || '');
         setScreenNumber(screen || '');
         setSeatNumber(seat || '');
+    }
+
+    if (user?.cinema_id && user.cinema_id !== 'default') {
+        supabase.from('screens').select('name').eq('cinema_id', user.cinema_id).order('name').then(({data}) => {
+            if (data) setScreensList(data.map(s => s.name));
+        });
     }
 
     const savedOutbox = localStorage.getItem(STORAGE_KEYS.OUTBOX);
@@ -603,6 +612,8 @@ export default function OutletPOS({ user }: { user: any }) {
                 staff_code: user?.employee_code || user?.employeeCode || null,
                 staff_name: user?.full_name || user?.name || null,
                 staff_email: user?.email,
+                screen_name: screenNumber,
+                seat_number: seatNumber,
                 collected_cash: actualCollectedCash,
                 return_cash: actualReturnCash,
                 ...(isSplit ? {
@@ -1065,17 +1076,32 @@ export default function OutletPOS({ user }: { user: any }) {
                                 <label className="pos-label">Screen Number</label>
                                 <div style={{ position: 'relative' }}>
                                     <Tv size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
-                                    <input 
-                                        id="pos-screen-number"
-                                        name="screen-number"
-                                        autoComplete="off"
-                                        type="text" 
-                                        placeholder="e.g. Screen 1" 
-                                        value={screenNumber}
-                                        onChange={e => setScreenNumber(e.target.value)}
-                                        className="pos-input"
-                                        style={{ paddingLeft: '36px' }}
-                                    />
+                                    {screensList.length > 0 ? (
+                                        <select
+                                            id="pos-screen-number"
+                                            value={screenNumber}
+                                            onChange={e => setScreenNumber(e.target.value)}
+                                            className="pos-input"
+                                            style={{ paddingLeft: '36px', appearance: 'none', backgroundColor: '#111827', width: '100%', boxSizing: 'border-box', color: 'white', border: '1px solid rgba(255,255,255,0.1)' }}
+                                        >
+                                            <option value="" disabled>Select Screen</option>
+                                            {screensList.map(s => (
+                                                <option key={s} value={s}>{s}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <input 
+                                            id="pos-screen-number"
+                                            name="screen-number"
+                                            autoComplete="off"
+                                            type="text" 
+                                            placeholder="e.g. Screen 1" 
+                                            value={screenNumber}
+                                            onChange={e => setScreenNumber(e.target.value)}
+                                            className="pos-input"
+                                            style={{ paddingLeft: '36px' }}
+                                        />
+                                    )}
                                 </div>
                             </div>
                             <div style={{ flex: 1 }}>
