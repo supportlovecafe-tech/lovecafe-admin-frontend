@@ -46,8 +46,8 @@ export default function OrderHistory({ user }) {
     }
 
     if (screenFilter !== 'ALL') {
-        // Screen name is embedded in location string. 
-        query = query.or(`location.ilike.%${screenFilter} •%,location.ilike.%${screenFilter},%,location.ilike.%${screenFilter}%`);
+        // Since we backfilled metadata, we can strictly filter using the JSONB column for 100% accuracy
+        query = query.eq('metadata->>screen_name', screenFilter);
     }
 
     // Convert YYYY-MM-DD to IST bounds for queries
