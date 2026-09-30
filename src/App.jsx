@@ -18,6 +18,7 @@ import KDSConfig from './pages/KDSConfig'
 import InventoryManager from './pages/InventoryManager'
 import AddonManager from './pages/AddonManager'
 import StaffBonusDashboard from './pages/StaffBonusDashboard'
+import TargetLeaderboard from './pages/TargetLeaderboard'
 import './App.css'
 
 function App() {
@@ -145,6 +146,7 @@ function TabRenderer({ role, user, currentTab }) {
     if (currentTab === 'live-orders' && (p.includes('orders') || p.includes('outlet-pos'))) return <OutletManagerDashboard user={user} />;
     if (currentTab === 'outlet-pos' && (p.includes('orders') || p.includes('outlet-pos'))) return <OutletPOS user={user} />;
     if (currentTab === 'sales' && p.includes('sales')) return <SalesDashboard user={user} />;
+    if (currentTab === 'targets' && p.includes('targets')) return <TargetLeaderboard user={user} />;
     if (currentTab === 'history' && (p.includes('history') || p.includes('orders'))) return <OrderHistory user={user} />;
     if (currentTab === 'menu' && p.includes('menu')) return <MenuManager user={user} />;
     if (currentTab === 'combos' && (p.includes('combos') || p.includes('menu'))) return <ComboManager user={user} />;

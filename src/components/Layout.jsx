@@ -95,6 +95,9 @@ export default function Layout({ user, onLogout, currentTab, children }) {
               {(!user.permissions || user.permissions.includes('sales')) && (
                 <NavItem icon={<PieChart size={20} />} label="Sales Analytics" tabId="sales" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               )}
+              {(!user.permissions || user.permissions.includes('targets')) && (
+                <NavItem icon={<Award size={20} />} label="Target Leaderboard" tabId="targets" currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
+              )}
               {(!user.permissions || user.permissions.includes('menu')) && (
                 <NavItem icon={<Coffee size={20} />}  label="Menu Editor"  tabId="menu"       currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               )}

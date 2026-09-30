@@ -318,7 +318,8 @@ export default function StaffManager() {
                     { id: 'combos', label: 'Combo Deals' },
                     { id: 'offers', label: 'Promos & Offers' },
                     { id: 'inventory', label: 'Inventory Stock' },
-                    { id: 'kds-config', label: 'KDS Routing' }
+                    { id: 'kds-config', label: 'KDS Routing' },
+                    { id: 'targets', label: 'Target Leaderboard' }
                   ].map(mod => (
                     <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)' }}>
                       <input type="checkbox" checked={formData.permissions.includes(mod.id)} onChange={e => {
