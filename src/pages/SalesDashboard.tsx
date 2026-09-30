@@ -961,9 +961,9 @@ export default function SalesDashboard({ user }: { user: any }) {
           <div style={{ position: 'relative', width: '100%' }}>
             {targetsLoading ? (
               <div className="skeleton" style={{ height: '300px', width: '100%' }} />
-            ) : (
-            <div style={{ padding: '36px 20px', textAlign: 'center' }}>
-              <div style={{
+            ) : targetsList.length === 0 ? (
+              <div style={{ padding: '36px 20px', textAlign: 'center' }}>
+                <div style={{
                 width: '48px', height: '48px', borderRadius: '50%',
                 background: 'rgba(255, 47, 146, 0.1)', border: '1px solid rgba(255, 47, 146, 0.25)',
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px'
