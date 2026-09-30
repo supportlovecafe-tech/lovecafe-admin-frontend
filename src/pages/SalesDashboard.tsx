@@ -931,11 +931,10 @@ export default function SalesDashboard({ user }: { user: any }) {
       {/* OUTLET SALES TARGET & ACHIEVEMENT SECTION                                */}
       {/* ========================================================================= */}
       <div style={{ marginTop: '20px' }}>
-        <ChartContainer 
-          title="Outlet Sales Target & Achievement" 
-          loading={targetsLoading}
-          headerAction={
-            isOutletAdmin && (
+        <div className="glass-card analytics-chart-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'white' }}>Outlet Sales Target & Achievement</h3>
+            {isOutletAdmin && (
               <button
                 onClick={openNewTargetModal}
                 style={{
@@ -957,10 +956,12 @@ export default function SalesDashboard({ user }: { user: any }) {
                 <Plus size={14} />
                 <span>SET TARGET</span>
               </button>
-            )
-          }
-        >
-          {targetsList.length === 0 ? (
+            )}
+          </div>
+          <div style={{ position: 'relative', width: '100%' }}>
+            {targetsLoading ? (
+              <div className="skeleton" style={{ height: '300px', width: '100%' }} />
+            ) : (
             <div style={{ padding: '36px 20px', textAlign: 'center' }}>
               <div style={{
                 width: '48px', height: '48px', borderRadius: '50%',
@@ -1266,8 +1267,9 @@ export default function SalesDashboard({ user }: { user: any }) {
                 </div>
               </div>
             </div>
-          )}
-        </ChartContainer>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Employee Sales Performance */}
