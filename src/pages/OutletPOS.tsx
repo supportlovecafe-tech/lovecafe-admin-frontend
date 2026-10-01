@@ -557,7 +557,8 @@ export default function OutletPOS({ user }: { user: any }) {
 
         const timestampStr = Date.now().toString();
         const shortTime = timestampStr.substring(timestampStr.length - 4);
-        const displayId = `OUTLET-${shortTime}`;
+        const randomStr = Math.floor(100 + Math.random() * 900).toString();
+        const displayId = `OUTLET-${shortTime}${randomStr}`;
         
         const itemsJson = cart.map(item => ({
             id: item.is_combo ? (item.combo_id || item.id) : (item.food_id || item.id),
