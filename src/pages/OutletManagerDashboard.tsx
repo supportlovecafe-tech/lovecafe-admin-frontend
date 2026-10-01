@@ -972,14 +972,31 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
             <span style={{ color: 'var(--text-muted)' }}>
               Collected: <strong style={{ color: '#ffffff' }}>₹{collectedAmt.toFixed(2)}</strong>
             </span>
-            <span style={{ 
+            <span 
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (returnedAmt <= 0) return;
+                const isPaid = !!order.metadata?.return_cash_paid;
+                const newMetadata = { ...(order.metadata || {}), return_cash_paid: !isPaid };
+                const { error } = await supabase.from('orders').update({ metadata: newMetadata }).eq('id', order.id);
+                if (error) console.error("Failed to update return cash status:", error);
+              }}
+              style={{ 
               color: returnedAmt > 0 ? '#4ade80' : 'var(--text-muted)', 
               fontWeight: 800,
               background: returnedAmt > 0 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255,255,255,0.05)',
-              padding: '1px 6px',
-              borderRadius: '4px'
+              padding: '2px 8px',
+              borderRadius: '4px',
+              cursor: returnedAmt > 0 ? 'pointer' : 'default',
+              textDecoration: order.metadata?.return_cash_paid ? 'line-through' : 'none',
+              opacity: order.metadata?.return_cash_paid ? 0.6 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.2s'
             }}>
               Returned: ₹{returnedAmt.toFixed(2)}
+              {returnedAmt > 0 && order.metadata?.return_cash_paid && <CheckCircle size={12} />}
             </span>
           </div>
           <div style={{ 
