@@ -109,7 +109,7 @@ export default function TargetLeaderboard({ user }) {
     <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px' }}>
       
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '32px' }}>
         <div>
           <h1 style={{ fontSize: '28px', fontWeight: '900', letterSpacing: '-1px', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <Award size={32} color="var(--primary-glow)" /> Target Leaderboard
@@ -126,12 +126,12 @@ export default function TargetLeaderboard({ user }) {
       </div>
 
       {/* Target Progress Section */}
-      <div className="glass-card" style={{ padding: '30px', marginBottom: '24px' }}>
+      <div className="glass-card" style={{ padding: '32px', marginBottom: '24px' }}>
         <h2 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Target size={18} /> Outlet Progress
         </h2>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
           <div>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 'bold' }}>Current Achieved</div>
             <div style={{ fontSize: '36px', fontWeight: '900', color: isMet ? '#10B981' : 'white', lineHeight: '1' }}>
@@ -169,7 +169,7 @@ export default function TargetLeaderboard({ user }) {
       </div>
 
       {/* Staff Leaderboard Section */}
-      <div className="glass-card" style={{ padding: '30px' }}>
+      <div className="glass-card" style={{ padding: '32px' }}>
         <h2 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Trophy size={18} /> Employee Leaderboard
         </h2>
@@ -180,10 +180,11 @@ export default function TargetLeaderboard({ user }) {
             <p>No sales recorded yet during this target period.</p>
           </div>
         ) : (
-          <div style={{ width: '100%', height: '400px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={staffSalesData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+          <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: staffSalesData.length > 5 ? '600px' : '100%', height: '400px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={staffSalesData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                 <XAxis 
                   dataKey="staff_name" 
                   tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 700 }}
@@ -226,6 +227,7 @@ export default function TargetLeaderboard({ user }) {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+            </div>
           </div>
         )}
       </div>
