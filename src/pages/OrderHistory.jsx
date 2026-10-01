@@ -82,7 +82,7 @@ export default function OrderHistory({ user }) {
   };
 
   const downloadFullTransactionReport = async () => {
-    let query = supabase.from('orders').select('timestamp, display_id, location, total_amount, payment_method, status, items, metadata, collected_cash, return_cash, staff_id, profiles:staff_id(full_name, employee_code, role)');
+    let query = supabase.from('orders').select('timestamp, display_id, location, total_amount, payment_method, status, items, metadata, collected_cash, return_cash, staff_id, customer_phone, profiles:staff_id(full_name, employee_code, role)');
     
     if (user.cinema_id && user.cinema_id !== 'default') {
         query = query.eq('cinema_id', user.cinema_id);
@@ -103,7 +103,8 @@ export default function OrderHistory({ user }) {
       'Date', 
       'Time', 
       'Order ID', 
-      'Location', 
+      'Location',
+      'Customer Phone', 
       'Amount', 
       'Payment', 
       'Status', 
@@ -132,6 +133,7 @@ export default function OrderHistory({ user }) {
             d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
             o.display_id || 'N/A',
             o.location,
+            o.customer_phone || 'N/A',
             o.total_amount,
             o.payment_method,
             o.status,
