@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { ShoppingBag, Search, Calendar, ChevronLeft, ChevronRight, Clock, Download, X, ListFilter } from 'lucide-react';
 
 export default function OrderHistory({ user }) {
+  const isOutletAdmin = Boolean(user && (user.role === 'OUTLET_MANAGER' || user.role === 'SUPER_ADMIN'));
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -335,10 +336,12 @@ export default function OrderHistory({ user }) {
           <h1 style={{ fontSize: 'clamp(22px, 6vw, 32px)', marginBottom: '6px' }}>Order History</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Browse and search past orders for {cinemaName || 'this outlet'}.</p>
         </div>
-        <button onClick={downloadFullTransactionReport} className="btn-lucrative oh-download-btn" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', flexShrink: 0 }}>
-          <Download size={18} />
-          <span>Download Report</span>
-        </button>
+        {isOutletAdmin && (
+          <button onClick={downloadFullTransactionReport} className="btn-lucrative oh-download-btn" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', flexShrink: 0 }}>
+            <Download size={18} />
+            <span>Download Report</span>
+          </button>
+        )}
       </header>
 
       {/* Filter Bar */}
