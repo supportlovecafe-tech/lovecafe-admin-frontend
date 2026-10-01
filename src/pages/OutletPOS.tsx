@@ -600,7 +600,7 @@ export default function OutletPOS({ user }: { user: any }) {
             payment_status: 'PAID',
             payment_method: isSplit ? 'POS_SPLIT' : (paymentMode === 'Cash' ? 'POS_CASH' : paymentMode.toUpperCase()),
             timestamp: new Date().toISOString(),
-            is_demo_order: true,
+            is_demo_order: false,
             is_pos: true,
             metadata: {
                 subtotal,
