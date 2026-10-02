@@ -158,7 +158,14 @@ export default function OutletPOS({ user }: { user: any }) {
             setFoods(allItems);
             localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(allItems));
             
-            const uniqueCategories = Array.from(new Set(allItems.map(item => item.category)));
+            const catMap = new Map<string, string>();
+            allItems.forEach(item => {
+                if (item.category) {
+                   const lower = item.category.toLowerCase();
+                   if (!catMap.has(lower)) catMap.set(lower, item.category);
+                }
+            });
+            const uniqueCategories = Array.from(catMap.values());
             setCategories(['All', ...uniqueCategories]);
         }
     } catch (e) {
@@ -167,7 +174,14 @@ export default function OutletPOS({ user }: { user: any }) {
         if (cached) {
             const allItems = JSON.parse(cached);
             setFoods(allItems);
-            const uniqueCategories = Array.from(new Set(allItems.map(item => item.category)));
+            const catMap = new Map<string, string>();
+            allItems.forEach(item => {
+                if (item.category) {
+                   const lower = item.category.toLowerCase();
+                   if (!catMap.has(lower)) catMap.set(lower, item.category);
+                }
+            });
+            const uniqueCategories = Array.from(catMap.values());
             setCategories(['All', ...uniqueCategories]);
         }
     } finally {
@@ -178,7 +192,7 @@ export default function OutletPOS({ user }: { user: any }) {
   const getItemAddons = (item: any) => {
     if (!item || item.is_combo || !addonGroups.length) return [];
     const itemAssigns = addonAssignments.filter(a => 
-      a.food_item_id === item.id || (a.category && a.category === item.category)
+      a.food_item_id === item.id || (a.category && item.category && a.category.toLowerCase() === item.category.toLowerCase())
     );
     const groupIds = new Set(itemAssigns.map(a => a.group_id));
     return addonGroups.filter(g => groupIds.has(g.id) && g.addon_options && g.addon_options.length > 0);
@@ -298,7 +312,7 @@ export default function OutletPOS({ user }: { user: any }) {
   // Performance: Memoized Filtering
   const filteredFoods = useMemo(() => {
       return foods.filter(food => {
-          const matchesCategory = activeCategory === 'All' || food.category === activeCategory;
+          const matchesCategory = activeCategory === 'All' || (food.category && food.category.toLowerCase() === activeCategory.toLowerCase());
           const matchesSearch = food.name.toLowerCase().includes(searchTerm.toLowerCase());
           return matchesCategory && matchesSearch;
       });
@@ -878,7 +892,7 @@ export default function OutletPOS({ user }: { user: any }) {
                             onClick={() => setActiveCategory(cat)}
                             className={`pos-category-btn ${activeCategory === cat ? 'active' : ''}`}
                         >
-                            {cat}
+                            {cat.toUpperCase()}
                         </button>
                     ))}
                 </div>

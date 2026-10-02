@@ -175,7 +175,7 @@ export default function AddonManager({ user }) {
 
   const currentAssignments = assignments[selectedGroupId] || [];
   const isAssignedToItem = (itemId) => currentAssignments.some(a => a.food_item_id === itemId);
-  const isAssignedToCategory = (cat) => currentAssignments.some(a => a.category === cat);
+  const isAssignedToCategory = (cat) => currentAssignments.some(a => a.category && cat && a.category.toLowerCase() === cat.toLowerCase());
 
   const handleToggleItemAssign = async (item) => {
     if (isAssignedToItem(item.id)) {
@@ -192,7 +192,7 @@ export default function AddonManager({ user }) {
 
   const handleToggleCategoryAssign = async (cat) => {
     if (isAssignedToCategory(cat)) {
-      const row = currentAssignments.find(a => a.category === cat);
+      const row = currentAssignments.find(a => a.category && cat && a.category.toLowerCase() === cat.toLowerCase());
       await supabase.from('addon_group_assignments').delete().eq('id', row.id);
       setAssignments(prev => ({ ...prev, [selectedGroupId]: currentAssignments.filter(a => a.id !== row.id) }));
     } else {

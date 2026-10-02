@@ -101,13 +101,15 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
       let query = supabase
         .from('orders')
         .select('*, customer_profiles(first_name, last_name)')
+        .in('status', ['PENDING', 'PREPARING', 'READY'])
         .order('timestamp', { ascending: false });
       
       if (user.cinema_id && user.cinema_id !== 'default') {
           query = query.eq('cinema_id', user.cinema_id);
       }
       
-      const { data } = await query.limit(30);
+      // Increased limit from 30 to 150 to ensure active orders don't disappear on busy days
+      const { data } = await query.limit(150);
       if (data) setOrders(data as Order[]);
     } catch (e) {
       console.error("Failed to fetch orders:", e);
@@ -248,7 +250,7 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }
   };
 
-  const toggleItemDelivered = async (orderId: string, itemId: string) => {
+  const toggleItemStatus = async (orderId: string, itemId: string, targetStatus: 'READY' | 'DELIVERED') => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
@@ -256,12 +258,21 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     const updatedItems = currentItems.map((item: any) => {
       const currentId = item.item_id || item.food_id;
       if (currentId === itemId) {
-        const nextDelivered = !item.is_delivered;
-        return { 
-          ...item, 
-          is_delivered: nextDelivered,
-          kds_status: nextDelivered ? 'DELIVERED' : 'PREPARING'
-        };
+        if (targetStatus === 'READY') {
+          const isReady = item.kds_status === 'READY' || item.kds_status === 'DELIVERED';
+          return { 
+            ...item, 
+            kds_status: isReady ? 'PREPARING' : 'READY',
+            is_delivered: isReady ? false : item.is_delivered
+          };
+        } else {
+          const isDelivered = item.is_delivered || item.kds_status === 'DELIVERED';
+          return { 
+            ...item, 
+            is_delivered: !isDelivered,
+            kds_status: !isDelivered ? 'DELIVERED' : 'READY'
+          };
+        }
       }
       return item;
     });
@@ -496,7 +507,7 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
                   hasUnread={unreadMessages[order.id]} 
                   onAction={() => updateStatus(order.id, 'PREPARING')} 
                   onChat={() => openChat(order)} 
-                  onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
+                  onToggleItem={(itemId) => toggleItemStatus(order.id, itemId, 'READY')}
                   actionLabel="Accept & Prepare" 
                   actionColor="var(--primary-glow)" 
                   items={order.matchingItems!} 
@@ -522,7 +533,7 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
                   hasUnread={unreadMessages[order.id]} 
                   onAction={() => updateStatus(order.id, 'READY')} 
                   onChat={() => openChat(order)} 
-                  onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
+                  onToggleItem={(itemId) => toggleItemStatus(order.id, itemId, 'READY')}
                   actionLabel="Mark All Ready" 
                   actionColor="var(--secondary-glow)" 
                   items={order.matchingItems!} 
@@ -548,7 +559,7 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
                   hasUnread={unreadMessages[order.id]} 
                   onAction={() => updateStatus(order.id, 'DELIVERED')} 
                   onChat={() => openChat(order)} 
-                  onToggleItem={(itemId) => toggleItemDelivered(order.id, itemId)}
+                  onToggleItem={(itemId) => toggleItemStatus(order.id, itemId, 'DELIVERED')}
                   actionLabel="All Delivered" 
                   actionColor="#4CAF50" 
                   items={order.matchingItems!} 
@@ -1029,6 +1040,12 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
         {items?.map((item, idx) => {
           const itemId = item.item_id || item.food_id || String(idx);
           const isDelivered = item.is_delivered === true || item.kds_status === 'DELIVERED';
+          const isReady = item.kds_status === 'READY';
+          const isCompleted = isDelivered || isReady;
+          
+          let statusText = 'Ready';
+          if (isDelivered) statusText = 'Delivered';
+          else if (isReady) statusText = 'Ready (Done)';
 
           return (
             <div 
@@ -1048,9 +1065,9 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
                     <span style={{ 
                       fontSize: '13px', 
                       fontWeight: 600,
-                      textDecoration: isDelivered ? 'line-through' : 'none', 
-                      color: isDelivered ? '#4CAF50' : 'inherit',
-                      opacity: isDelivered ? 0.75 : 1,
+                      textDecoration: isCompleted ? 'line-through' : 'none', 
+                      color: isCompleted ? '#4CAF50' : 'inherit',
+                      opacity: isCompleted ? 0.75 : 1,
                       wordBreak: 'break-word',
                       lineHeight: 1.3
                     }}>
@@ -1071,16 +1088,16 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
                       e.stopPropagation();
                       onToggleItem(itemId);
                     }}
-                    title={isDelivered ? "Mark as Not Delivered" : "Mark Ready & Delivered"}
+                    title={isDelivered ? "Mark as Not Delivered" : "Toggle Status"}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       gap: '4px',
                       padding: '4px 8px',
                       borderRadius: '8px',
-                      border: isDelivered ? '1px solid #4CAF50' : '1px solid rgba(255,255,255,0.2)',
-                      background: isDelivered ? 'rgba(76,175,80,0.18)' : 'rgba(255,255,255,0.06)',
-                      color: isDelivered ? '#4CAF50' : 'var(--text-muted)',
+                      border: isCompleted ? '1px solid #4CAF50' : '1px solid rgba(255,255,255,0.2)',
+                      background: isCompleted ? 'rgba(76,175,80,0.18)' : 'rgba(255,255,255,0.06)',
+                      color: isCompleted ? '#4CAF50' : 'var(--text-muted)',
                       cursor: 'pointer',
                       fontSize: '11px',
                       fontWeight: 600,
@@ -1089,8 +1106,8 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
                       whiteSpace: 'nowrap'
                     }}
                   >
-                    <CheckCircle size={13} color={isDelivered ? '#4CAF50' : 'currentColor'} />
-                    <span>{isDelivered ? 'Delivered' : 'Ready'}</span>
+                    <CheckCircle size={13} color={isCompleted ? '#4CAF50' : 'currentColor'} />
+                    <span>{statusText}</span>
                   </button>
                 )}
               </div>

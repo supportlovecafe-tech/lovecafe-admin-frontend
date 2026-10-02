@@ -768,7 +768,7 @@ export default function MenuManager({ user }: { user: any }) {
                                         const matched = allCategoryList.find(c => c.key === catUpper || c.key === rawCat.toUpperCase());
                                         return (
                                             <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.06)', padding: '3px 8px', borderRadius: '6px', color: 'rgba(255,255,255,0.75)', fontWeight: '500' }}>
-                                                {matched ? matched.label : item.category}
+                                                {(matched ? matched.label : (item.category || '')).toUpperCase()}
                                             </span>
                                         );
                                     })()}
@@ -870,12 +870,12 @@ export default function MenuManager({ user }: { user: any }) {
                             >
                                 <optgroup label="🟢 Ready Food" style={{ background: '#1c1c1e', color: '#ffb36a' }}>
                                     {allCategoryList.filter(c => c.section === 'READY_FOOD').map(cat => (
-                                        <option key={cat.key} value={cat.key}>{cat.label}</option>
+                                        <option key={cat.key} value={cat.key}>{cat.label.toUpperCase()}</option>
                                     ))}
                                 </optgroup>
                                 <optgroup label="🔥 Kitchen Food" style={{ background: '#1c1c1e', color: '#00d2ff' }}>
                                     {allCategoryList.filter(c => c.section === 'KITCHEN_FOOD').map(cat => (
-                                        <option key={cat.key} value={cat.key}>{cat.label}</option>
+                                        <option key={cat.key} value={cat.key}>{cat.label.toUpperCase()}</option>
                                     ))}
                                 </optgroup>
                             </select>
@@ -1529,7 +1529,7 @@ export default function MenuManager({ user }: { user: any }) {
                         <span style={{ fontSize: '20px' }}>{extractEmojiAndName(cat.label).emoji}</span>
                         <div>
                           <div style={{ fontWeight: 'bold', fontSize: '14px', color: 'white' }}>
-                            {extractEmojiAndName(cat.label).name}
+                            {extractEmojiAndName(cat.label).name.toUpperCase()}
                           </div>
                           <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>
                             Key: {cat.key}
