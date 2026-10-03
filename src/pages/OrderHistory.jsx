@@ -1,6 +1,6 @@
 import {  useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ShoppingBag, Search, Calendar, ChevronLeft, ChevronRight, Clock, Download, X, ListFilter } from 'lucide-react';
+import { ShoppingBag, Search, Calendar, ChevronLeft, ChevronRight, Clock, Download, X, ListFilter, Phone } from 'lucide-react';
 
 export default function OrderHistory({ user }) {
   const isOutletAdmin = Boolean(user && (user.role === 'OUTLET_MANAGER' || user.role === 'SUPER_ADMIN'));
@@ -468,6 +468,11 @@ export default function OrderHistory({ user }) {
                     <td>
                       <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{order.location}</div>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>#{order.display_id || order.id.substring(0,8).toUpperCase()}</div>
+                      {order.customer_phone && (
+                        <div style={{ fontSize: '12px', color: 'var(--secondary-glow)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Phone size={10} /> {order.customer_phone}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -623,6 +628,11 @@ export default function OrderHistory({ user }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="oh-card-location">{order.location}</div>
                     <div className="oh-card-id">#{order.display_id || order.id.substring(0,8).toUpperCase()}</div>
+                    {order.customer_phone && (
+                      <div style={{ fontSize: '12px', color: 'var(--secondary-glow)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Phone size={10} /> {order.customer_phone}
+                      </div>
+                    )}
                   </div>
                   <div className="oh-card-amount">₹{order.total_amount}</div>
                 </div>
