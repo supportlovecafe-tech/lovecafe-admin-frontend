@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, Clock, ShoppingBag, MessageSquare, Send, X, User, Phone, Power, Info, CreditCard, Monitor, ListFilter } from 'lucide-react';
+import { CheckCircle, Clock, ShoppingBag, MessageSquare, Send, X, User, Phone, Power, Info, CreditCard, Monitor, ListFilter, Volume2, VolumeX } from 'lucide-react';
 import { Database } from '../lib/database.types';
 import { InventoryKillSwitch } from '../components/InventoryKillSwitch';
 
@@ -25,6 +25,47 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState<string | number>(1);
   const [mobileQueueFilter, setMobileQueueFilter] = useState<'ALL' | 'PENDING' | 'PREPARING' | 'READY'>('ALL');
 
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const soundEnabledRef = React.useRef(soundEnabled);
+  
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  const playBuzzer = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const audioCtx = new AudioContextClass();
+      
+      const playTone = (startTime: number, duration: number, frequency: number) => {
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        
+        oscillator.type = 'sawtooth';
+        oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+        
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(1, startTime + 0.05);
+        gainNode.gain.setValueAtTime(1, startTime + duration - 0.05);
+        gainNode.gain.linearRampToValueAtTime(0, startTime + duration);
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        oscillator.start(startTime);
+        oscillator.stop(startTime + duration);
+      };
+
+      const now = audioCtx.currentTime;
+      playTone(now, 0.3, 120);
+      playTone(now + 0.4, 0.3, 120);
+      playTone(now + 0.8, 0.6, 120);
+    } catch (e) {
+      console.error("Audio error:", e);
+    }
+  };
+
   useEffect(() => {
     fetchOrders();
     fetchKdsConfigs();
@@ -39,6 +80,9 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     const orderSubscription = supabase
       .channel('public:orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
+          if (payload.eventType === 'INSERT' && soundEnabledRef.current) {
+              playBuzzer();
+          }
           if (!pendingUpdateRef.current) {
             pendingUpdateRef.current = true;
             setTimeout(() => {
@@ -734,6 +778,14 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
         }).length} <span style={{ color: '#F44336', fontWeight: 'bold' }}>Critical</span>
         </p>
         <div className="kds-header-actions">
+             <button 
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                className="glass-card" 
+                style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '14px', background: soundEnabled ? 'rgba(76, 175, 80, 0.1)' : 'rgba(255, 255, 255, 0.05)', border: soundEnabled ? '1px solid rgba(76, 175, 80, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)', color: soundEnabled ? '#4CAF50' : 'var(--text-secondary)', cursor: 'pointer' }}
+             >
+                 {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                 <span style={{ fontWeight: 600, fontSize: '13px' }}>Alerts {soundEnabled ? 'ON' : 'OFF'}</span>
+             </button>
              <button 
                 onClick={() => setShowKillSwitch(true)}
                 className="glass-card" 
