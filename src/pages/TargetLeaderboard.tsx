@@ -8,6 +8,7 @@ export default function TargetLeaderboard({ user }) {
   const [activeTarget, setActiveTarget] = useState(null);
   const [achievedSales, setAchievedSales] = useState(0);
   const [staffSalesData, setStaffSalesData] = useState([]);
+  const [deliveryData, setDeliveryData] = useState([]);
   
   const cinemaId = user?.cinema_id;
 
@@ -46,17 +47,51 @@ export default function TargetLeaderboard({ user }) {
       const startIso = new Date(new Date(currentTarget.start_date).getTime() - 19800000).toISOString();
       const endIso = new Date(new Date(currentTarget.end_date).getTime() + 66599999).toISOString();
 
-      // 2. Fetch Achieved Sales for this target
-      const { data: orderData } = await supabase
-        .from('orders')
-        .select('total_amount')
-        .eq('cinema_id', cinemaId)
-        .not('status', 'in', '("CANCELLED","REFUNDED")')
-        .gte('timestamp', startIso)
-        .lte('timestamp', endIso);
+      // 2. Fetch Achieved Sales & Delivery Data (Paginated to bypass 1000 row limit)
+      let allOrders = [];
+      let page = 0;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const { data: batch, error: batchError } = await supabase
+          .from('orders')
+          .select('total_amount, status, delivered_by, metadata')
+          .eq('cinema_id', cinemaId)
+          .not('status', 'in', '("CANCELLED","REFUNDED")')
+          .gte('timestamp', startIso)
+          .lte('timestamp', endIso)
+          .range(page * 1000, (page + 1) * 1000 - 1);
+          
+        if (batchError || !batch || batch.length === 0) {
+          hasMore = false;
+        } else {
+          allOrders = [...allOrders, ...batch];
+          if (batch.length < 1000) hasMore = false;
+          else page++;
+        }
+      }
 
-      const totalAchieved = (orderData || []).reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+      const totalAchieved = allOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
       setAchievedSales(totalAchieved);
+
+      // Compute Delivery Leaderboard
+      const deliveryMap = new Map();
+      allOrders.forEach(o => {
+        if (o.status === 'DELIVERED') {
+          const dCode = o.metadata?.delivered_by_code || (o.delivered_by ? 'EMP-' + o.delivered_by.substring(0,6).toUpperCase() : null);
+          const dName = o.metadata?.delivered_by_name || dCode || 'Staff';
+          
+          if (dCode) {
+            if (!deliveryMap.has(dCode)) {
+              deliveryMap.set(dCode, { staff_code: dCode, staff_name: dName, total_deliveries: 0, total_sales: 0 });
+            }
+            const stat = deliveryMap.get(dCode);
+            stat.total_deliveries += 1;
+            stat.total_sales += Number(o.total_amount) || 0;
+          }
+        }
+      });
+      setDeliveryData(Array.from(deliveryMap.values()).sort((a, b) => b.total_deliveries - a.total_deliveries));
 
       // 3. Fetch Staff Leaderboard within this target's dates
       const { data: staffData, error: staffError } = await supabase.rpc('get_staff_sales_report', {
@@ -223,6 +258,69 @@ export default function TargetLeaderboard({ user }) {
                 >
                   {staffSalesData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={index === 0 ? 'var(--primary-glow)' : (index === 1 ? 'var(--accent-gold)' : (index === 2 ? '#94a3b8' : 'rgba(255,255,255,0.1)'))} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Delivery Leaderboard Section */}
+      <div className="glass-card" style={{ padding: '32px', marginTop: '24px' }}>
+        <h2 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Trophy size={18} /> Delivery Leaderboard
+        </h2>
+
+        {deliveryData.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+            <TrendingUp size={32} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
+            <p>No delivery data recorded yet during this target period.</p>
+          </div>
+        ) : (
+          <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: deliveryData.length > 5 ? '600px' : '100%', height: '400px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={deliveryData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis 
+                  dataKey="staff_name" 
+                  tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 700 }}
+                  axisLine={false}
+                  tickLine={false}
+                  angle={-45}
+                  textAnchor="end"
+                  dy={10}
+                />
+                <YAxis 
+                  tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 700 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip 
+                  cursor={{ fill: 'rgba(255,255,255,0.02)' }}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div style={{ background: 'var(--bg-card)', padding: '12px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+                          <div style={{ fontWeight: '900', fontSize: '14px', marginBottom: '8px' }}>{data.staff_name}</div>
+                          <div style={{ color: '#4CAF50', fontWeight: 'bold', fontSize: '16px' }}>{data.total_deliveries} Delivered</div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '4px' }}>Value: ₹{data.total_sales.toLocaleString()}</div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Bar 
+                  dataKey="total_deliveries" 
+                  radius={[6, 6, 0, 0]} 
+                  maxBarSize={60}
+                >
+                  {deliveryData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={index === 0 ? '#4CAF50' : (index === 1 ? '#81C784' : (index === 2 ? '#A5D6A7' : 'rgba(255,255,255,0.1)'))} />
                   ))}
                 </Bar>
               </BarChart>
