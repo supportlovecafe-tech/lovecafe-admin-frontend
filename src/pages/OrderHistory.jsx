@@ -10,6 +10,8 @@ export default function OrderHistory({ user }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [screenFilter, setScreenFilter] = useState('ALL');
+  const [outletFilter, setOutletFilter] = useState('ALL');
+  const [allOutlets, setAllOutlets] = useState([]);
   const [screens, setScreens] = useState([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -20,9 +22,14 @@ export default function OrderHistory({ user }) {
 
   useEffect(() => {
     fetchOrders();
-  }, [page, statusFilter, screenFilter, startDate, endDate]);
+  }, [page, statusFilter, screenFilter, outletFilter, startDate, endDate]);
 
   useEffect(() => {
+    if (isSuperAdmin) {
+      supabase.from('cinemas').select('id, name').order('name').then(({ data }) => {
+        if (data) setAllOutlets(data);
+      });
+    }
     if (user.cinema_id && user.cinema_id !== 'default') {
       if (!cinemaName) {
         supabase.from('cinemas').select('name').eq('id', user.cinema_id).single().then(({data}) => {
@@ -41,6 +48,8 @@ export default function OrderHistory({ user }) {
     
     if (user.cinema_id && user.cinema_id !== 'default') {
         query = query.eq('cinema_id', user.cinema_id);
+    } else if (isSuperAdmin && outletFilter !== 'ALL') {
+        query = query.eq('cinema_id', outletFilter);
     }
 
     if (statusFilter !== 'ALL') {
@@ -100,6 +109,8 @@ export default function OrderHistory({ user }) {
     
     if (user.cinema_id && user.cinema_id !== 'default') {
         query = query.eq('cinema_id', user.cinema_id);
+    } else if (isSuperAdmin && outletFilter !== 'ALL') {
+        query = query.eq('cinema_id', outletFilter);
     }
     const getISTStart = (dateStr) => dateStr ? new Date(new Date(dateStr).getTime() - 19800000).toISOString() : null;
     const getISTEnd = (dateStr) => dateStr ? new Date(new Date(dateStr).getTime() + 66599999).toISOString() : null;
@@ -403,6 +414,22 @@ export default function OrderHistory({ user }) {
               ))}
             </select>
           </div>
+          {/* Outlet Filter - SUPER_ADMIN only */}
+          {isSuperAdmin && (
+            <div className="oh-status-wrap">
+              <select
+                className="input-premium"
+                value={outletFilter}
+                onChange={e => { setOutletFilter(e.target.value); setPage(0); }}
+                style={{ appearance: 'none', width: '100%', boxSizing: 'border-box', borderColor: 'rgba(255,47,146,0.4)' }}
+              >
+                <option value="ALL">🏪 All Outlets</option>
+                {allOutlets.map(o => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Date Range */}
