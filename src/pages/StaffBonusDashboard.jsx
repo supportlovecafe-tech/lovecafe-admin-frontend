@@ -149,6 +149,7 @@ export default function StaffBonusDashboard({ user }) {
             total_orders: 0,
             total_sales: 0,
             cash_collected: 0,
+            upi_collected: 0,
             first_order_date: o.timestamp,
             last_order_date: o.timestamp
           };
@@ -156,7 +157,16 @@ export default function StaffBonusDashboard({ user }) {
 
         staffMap[sid].total_orders++;
         staffMap[sid].total_sales += (o.total_amount || 0);
-        staffMap[sid].cash_collected += ((o.collected_cash || 0) - (o.return_cash || 0));
+        
+        // Track Cash & UPI Breakdown
+        if (o.payment_method === 'POS_SPLIT') {
+          staffMap[sid].cash_collected += ((o.collected_cash || 0) - (o.return_cash || 0));
+          staffMap[sid].upi_collected += (o.total_amount || 0) - ((o.collected_cash || 0) - (o.return_cash || 0));
+        } else if (o.payment_method === 'POS_CASH' || o.payment_method === 'CASH') {
+          staffMap[sid].cash_collected += ((o.collected_cash || 0) - (o.return_cash || 0));
+        } else if (o.payment_method === 'UPI' || o.payment_method === 'POS_UPI') {
+          staffMap[sid].upi_collected += (o.total_amount || 0);
+        }
         if (new Date(o.timestamp) < new Date(staffMap[sid].first_order_date)) staffMap[sid].first_order_date = o.timestamp;
         if (new Date(o.timestamp) > new Date(staffMap[sid].last_order_date)) staffMap[sid].last_order_date = o.timestamp;
       });
@@ -615,7 +625,7 @@ export default function StaffBonusDashboard({ user }) {
                 <th style={{ padding: '14px 20px' }}>Role</th>
                 <th style={{ padding: '14px 20px', textAlign: 'right' }}>Orders</th>
                 <th style={{ padding: '14px 20px', textAlign: 'right' }}>Total Sales</th>
-                <th style={{ padding: '14px 20px', textAlign: 'right' }}>Cash Handled</th>
+                <th style={{ padding: '14px 20px', textAlign: 'right' }}>Cash / UPI</th>
                 <th style={{ padding: '14px 20px', textAlign: 'right' }}>Avg Ticket</th>
                 <th style={{ padding: '14px 20px', textAlign: 'right' }}>Calculated Bonus</th>
               </tr>
@@ -690,8 +700,9 @@ export default function StaffBonusDashboard({ user }) {
                       <td style={{ padding: '14px 20px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: 'white' }}>
                         ₹{staff.total_sales.toLocaleString()}
                       </td>
-                      <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '13px', color: 'var(--text-muted)' }}>
-                        ₹{staff.cash_collected.toLocaleString()}
+                      <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '12px', color: 'var(--text-muted)' }}>
+                        <div style={{ color: '#4ade80', fontWeight: '600' }}>C: ₹{staff.cash_collected.toLocaleString()}</div>
+                        <div style={{ color: '#38bdf8', fontWeight: '600', marginTop: '2px' }}>U: ₹{staff.upi_collected.toLocaleString()}</div>
                       </td>
                       <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '13px', color: 'var(--text-muted)' }}>
                         ₹{staff.avg_order_value}
