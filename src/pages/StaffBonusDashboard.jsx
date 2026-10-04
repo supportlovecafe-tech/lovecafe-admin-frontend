@@ -108,7 +108,7 @@ export default function StaffBonusDashboard({ user }) {
     try {
       let q = supabase
         .from('orders')
-        .select('id, cinema_id, total_amount, collected_cash, timestamp, status, staff_id, metadata, cinemas(id, name), profiles:staff_id(id, full_name, employee_code, role)')
+        .select('id, cinema_id, total_amount, collected_cash, return_cash, timestamp, status, staff_id, metadata, cinemas(id, name), profiles:staff_id(id, full_name, employee_code, role)')
         .neq('status', 'CANCELLED');
 
       const startIso = startDate ? new Date(new Date(startDate).getTime() - 19800000).toISOString() : null;
@@ -156,7 +156,7 @@ export default function StaffBonusDashboard({ user }) {
 
         staffMap[sid].total_orders++;
         staffMap[sid].total_sales += (o.total_amount || 0);
-        staffMap[sid].cash_collected += (o.collected_cash || 0);
+        staffMap[sid].cash_collected += ((o.collected_cash || 0) - (o.return_cash || 0));
         if (new Date(o.timestamp) < new Date(staffMap[sid].first_order_date)) staffMap[sid].first_order_date = o.timestamp;
         if (new Date(o.timestamp) > new Date(staffMap[sid].last_order_date)) staffMap[sid].last_order_date = o.timestamp;
       });
