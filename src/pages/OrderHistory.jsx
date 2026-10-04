@@ -1,9 +1,10 @@
 import {  useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ShoppingBag, Search, Calendar, ChevronLeft, ChevronRight, Clock, Download, X, ListFilter, Phone } from 'lucide-react';
+import { ShoppingBag, Search, Calendar, ChevronLeft, ChevronRight, Clock, Download, X, ListFilter, Phone, Trash2 } from 'lucide-react';
 
 export default function OrderHistory({ user }) {
   const isOutletAdmin = Boolean(user && (user.role === 'OUTLET_MANAGER' || user.role === 'SUPER_ADMIN'));
+  const isSuperAdmin = Boolean(user && user.role === 'SUPER_ADMIN');
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -79,6 +80,19 @@ export default function OrderHistory({ user }) {
 
     if (data) setOrders(data);
     setLoading(false);
+  };
+
+  const deleteOrder = async (orderId, displayId) => {
+    const confirmed = window.confirm(
+      `⚠️ PERMANENT DELETE\n\nAre you sure you want to permanently delete order #${displayId || orderId}?\n\nThis cannot be undone.`
+    );
+    if (!confirmed) return;
+    const { error } = await supabase.from('orders').delete().eq('id', orderId);
+    if (error) {
+      alert('Failed to delete order: ' + error.message);
+    } else {
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+    }
   };
 
   const downloadFullTransactionReport = async () => {
@@ -427,13 +441,14 @@ export default function OrderHistory({ user }) {
                 <th>Order Collected By</th>
                 <th>Order Delivered By</th>
                 <th>Timestamp</th>
+                {isSuperAdmin && <th style={{ textAlign: 'center', color: '#ff6b6b' }}>Delete</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '48px' }}><div className="spinner" /></td></tr>
+                <tr><td colSpan={isSuperAdmin ? 9 : 8} style={{ textAlign: 'center', padding: '48px' }}><div className="spinner" /></td></tr>
               ) : orders.length === 0 ? (
-                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>No orders found matching your criteria.</td></tr>
+                <tr><td colSpan={isSuperAdmin ? 9 : 8} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>No orders found matching your criteria.</td></tr>
               ) : orders.map(order => {
                 const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
                 const rawTime = order.timestamp;
@@ -585,6 +600,30 @@ export default function OrderHistory({ user }) {
                     <td style={{ color: 'var(--text-muted)', fontSize: '12px', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Clock size={12} /> {date}</div>
                     </td>
+                    {isSuperAdmin && (
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          onClick={() => deleteOrder(order.id, order.display_id)}
+                          title="Permanently delete this order"
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: '8px',
+                            color: '#ef4444',
+                            cursor: 'pointer',
+                            padding: '6px 8px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.25)'; e.currentTarget.style.transform = 'scale(1.1)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.transform = 'scale(1)'; }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
