@@ -533,6 +533,20 @@ export default function OutletPOS({ user }: { user: any }) {
         return;
     }
 
+    const cleanPhone = customerPhone.replace(/\D/g, '');
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+        setIsMobileCartOpen(true);
+        alert("Please enter a valid 10-digit customer mobile number starting with 6, 7, 8, or 9.");
+        return;
+    }
+
+    const cleanSeat = seatNumber.replace(/[^a-zA-Z0-9\s-]/g, '').trim().toUpperCase();
+    if (!cleanSeat || !/^[A-Z0-9\s-]{1,10}$/.test(cleanSeat)) {
+        setIsMobileCartOpen(true);
+        alert("Please enter a valid seat number (e.g. F9, A12, Box 1). Emojis and special characters are not allowed.");
+        return;
+    }
+
     // Validate Split Payment
     if (paymentMode === 'Split') {
         const numCash = parseFloat(splitCash);
@@ -560,7 +574,7 @@ export default function OutletPOS({ user }: { user: any }) {
         const { data: existingCustomer } = await supabase
             .from('outlet_customers')
             .select('id')
-            .eq('phone', customerPhone)
+            .eq('phone', cleanPhone)
             .single();
             
         if (existingCustomer) {
@@ -570,7 +584,7 @@ export default function OutletPOS({ user }: { user: any }) {
             const shortId = Math.random().toString(36).substring(2, 10).toUpperCase();
             const { data: newCustomer, error: customerErr } = await supabase
                 .from('outlet_customers')
-                .insert({ phone: customerPhone, short_id: shortId })
+                .insert({ phone: cleanPhone, short_id: shortId })
                 .select('id')
                 .single();
             
@@ -591,7 +605,7 @@ export default function OutletPOS({ user }: { user: any }) {
             }
         }
 
-        const locationString = `OUTLET, ${cinemaName}, ${screenNumber}, ${seatNumber}`;
+        const locationString = `OUTLET, ${cinemaName}, ${screenNumber}, ${cleanSeat}`;
 
         const timestampStr = Date.now().toString();
         const shortTime = timestampStr.substring(timestampStr.length - 4);
@@ -638,7 +652,7 @@ export default function OutletPOS({ user }: { user: any }) {
             items: itemsJson,
             total_amount: total, 
             location: locationString,
-            customer_phone: customerPhone,
+            customer_phone: cleanPhone,
             outlet_customer_id: outletCustomerId,
             status: 'PENDING',
             payment_status: isPod ? 'PENDING' : 'PAID',
@@ -657,7 +671,7 @@ export default function OutletPOS({ user }: { user: any }) {
                 staff_name: user?.full_name || user?.name || null,
                 staff_email: user?.email,
                 screen_name: screenNumber,
-                seat_number: seatNumber,
+                seat_number: cleanSeat,
                 collected_cash: actualCollectedCash,
                 return_cash: actualReturnCash,
                 ...(isPod ? { pay_on_delivery: true } : {}),
@@ -969,7 +983,8 @@ export default function OutletPOS({ user }: { user: any }) {
                         type="text"
                         placeholder="Seat..."
                         value={seatNumber}
-                        onChange={e => setSeatNumber(e.target.value)}
+                        maxLength={10}
+                        onChange={e => setSeatNumber(e.target.value.replace(/[^a-zA-Z0-9\s-]/g, '').toUpperCase())}
                         className="pos-quickbar-input"
                     />
                 </div>
@@ -1237,8 +1252,9 @@ export default function OutletPOS({ user }: { user: any }) {
                                         autoComplete="off"
                                         type="text" 
                                         placeholder="e.g. F9" 
+                                        maxLength={10}
                                         value={seatNumber}
-                                        onChange={e => setSeatNumber(e.target.value)}
+                                        onChange={e => setSeatNumber(e.target.value.replace(/[^a-zA-Z0-9\s-]/g, '').toUpperCase())}
                                         className="pos-input"
                                         style={{ paddingLeft: '36px' }}
                                     />
