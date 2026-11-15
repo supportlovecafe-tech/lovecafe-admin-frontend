@@ -1,6 +1,6 @@
 import {  useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ShoppingBag, Search, Calendar, ChevronLeft, ChevronRight, Clock, Download, X, ListFilter, Phone, Trash2 } from 'lucide-react';
+import { ShoppingBag, Search, Calendar, ChevronLeft, ChevronRight, ChevronDown, Clock, Download, X, ListFilter, Phone, Trash2 } from 'lucide-react';
 import { getCinemaCycleStart, getCinemaCycleEnd } from '../lib/cinemaDate';
 import { getPaymentDisplayInfo } from '../lib/paymentUtils';
 import { applyOrderSearch } from '../lib/orderSearch';
@@ -253,7 +253,8 @@ export default function OrderHistory({ user }) {
         }
         .oh-status-wrap {
           flex: 1;
-          min-width: 120px;
+          min-width: 150px;
+          position: relative;
         }
         .oh-date-row {
           display: flex;
@@ -459,7 +460,18 @@ export default function OrderHistory({ user }) {
               className="input-premium"
               value={statusFilter}
               onChange={e => { setStatusFilter(e.target.value); setPage(0); }}
-              style={{ appearance: 'none', width: '100%', boxSizing: 'border-box' }}
+              style={{
+                appearance: 'none',
+                WebkitAppearance: 'none',
+                MozAppearance: 'none',
+                width: '100%',
+                height: '42px',
+                padding: '0 34px 0 14px',
+                fontSize: '13px',
+                boxSizing: 'border-box',
+                cursor: 'pointer',
+                background: 'rgba(255, 255, 255, 0.04)'
+              }}
             >
               <option value="ALL">All Statuses</option>
               <option value="PENDING">New</option>
@@ -468,19 +480,32 @@ export default function OrderHistory({ user }) {
               <option value="DELIVERED">Delivered</option>
               <option value="CANCELLED">Cancelled</option>
             </select>
+            <ChevronDown size={15} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           </div>
           <div className="oh-status-wrap">
             <select
               className="input-premium"
               value={screenFilter}
               onChange={e => { setScreenFilter(e.target.value); setPage(0); }}
-              style={{ appearance: 'none', width: '100%', boxSizing: 'border-box' }}
+              style={{
+                appearance: 'none',
+                WebkitAppearance: 'none',
+                MozAppearance: 'none',
+                width: '100%',
+                height: '42px',
+                padding: '0 34px 0 14px',
+                fontSize: '13px',
+                boxSizing: 'border-box',
+                cursor: 'pointer',
+                background: 'rgba(255, 255, 255, 0.04)'
+              }}
             >
               <option value="ALL">All Screens</option>
               {screens.map(screenName => (
                 <option key={screenName} value={screenName}>{screenName}</option>
               ))}
             </select>
+            <ChevronDown size={15} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           </div>
           {/* Outlet Filter - SUPER_ADMIN only */}
           {isSuperAdmin && (
@@ -489,13 +514,26 @@ export default function OrderHistory({ user }) {
                 className="input-premium"
                 value={outletFilter}
                 onChange={e => { setOutletFilter(e.target.value); setPage(0); }}
-                style={{ appearance: 'none', width: '100%', boxSizing: 'border-box', borderColor: 'rgba(255,47,146,0.4)' }}
+                style={{
+                  appearance: 'none',
+                  WebkitAppearance: 'none',
+                  MozAppearance: 'none',
+                  width: '100%',
+                  height: '42px',
+                  padding: '0 34px 0 14px',
+                  fontSize: '13px',
+                  boxSizing: 'border-box',
+                  borderColor: 'rgba(255,47,146,0.4)',
+                  cursor: 'pointer',
+                  background: 'rgba(255, 255, 255, 0.04)'
+                }}
               >
                 <option value="ALL">🏪 All Outlets</option>
                 {allOutlets.map(o => (
                   <option key={o.id} value={o.id}>{o.name}</option>
                 ))}
               </select>
+              <ChevronDown size={15} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
             </div>
           )}
         </div>

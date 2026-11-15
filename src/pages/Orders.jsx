@@ -6,6 +6,7 @@ import {
   Calendar, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
   Download, 
   X, 
   ListFilter, 
@@ -341,17 +342,17 @@ export default function Orders({ user }) {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'PENDING':
-        return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(255, 179, 106, 0.15)', color: 'var(--accent-gold)', border: '1px solid rgba(255, 179, 106, 0.3)' }}>NEW</span>;
+        return <span style={{ display: 'inline-block', whiteSpace: 'nowrap', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(255, 179, 106, 0.15)', color: 'var(--accent-gold)', border: '1px solid rgba(255, 179, 106, 0.3)' }}>NEW</span>;
       case 'PREPARING':
-        return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(0, 210, 255, 0.15)', color: 'var(--secondary-glow)', border: '1px solid rgba(0, 210, 255, 0.3)' }}>PREPARING</span>;
+        return <span style={{ display: 'inline-block', whiteSpace: 'nowrap', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(0, 210, 255, 0.15)', color: 'var(--secondary-glow)', border: '1px solid rgba(0, 210, 255, 0.3)' }}>PREPARING</span>;
       case 'READY':
-        return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(74, 222, 128, 0.15)', color: 'var(--success)', border: '1px solid rgba(74, 222, 128, 0.3)' }}>READY</span>;
+        return <span style={{ display: 'inline-block', whiteSpace: 'nowrap', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(74, 222, 128, 0.15)', color: 'var(--success)', border: '1px solid rgba(74, 222, 128, 0.3)' }}>READY</span>;
       case 'DELIVERED':
-        return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(156, 163, 175, 0.15)', color: 'var(--text-muted)', border: '1px solid rgba(156, 163, 175, 0.3)' }}>DELIVERED</span>;
+        return <span style={{ display: 'inline-block', whiteSpace: 'nowrap', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(156, 163, 175, 0.15)', color: 'var(--text-muted)', border: '1px solid rgba(156, 163, 175, 0.3)' }}>DELIVERED</span>;
       case 'CANCELLED':
-        return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(248, 113, 113, 0.15)', color: 'var(--error)', border: '1px solid rgba(248, 113, 113, 0.3)' }}>CANCELLED</span>;
+        return <span style={{ display: 'inline-block', whiteSpace: 'nowrap', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(248, 113, 113, 0.15)', color: 'var(--error)', border: '1px solid rgba(248, 113, 113, 0.3)' }}>CANCELLED</span>;
       default:
-        return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text-main)' }}>{status}</span>;
+        return <span style={{ display: 'inline-block', whiteSpace: 'nowrap', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text-main)' }}>{status}</span>;
     }
   };
 
@@ -628,12 +629,25 @@ export default function Orders({ user }) {
           </div>
 
           {/* Status Filter */}
-          <div style={{ flex: '0 1 160px', minWidth: '140px' }}>
+          <div style={{ flex: '0 0 auto', minWidth: '160px', position: 'relative' }}>
             <select
               className="input-premium"
               value={statusFilter}
               onChange={e => { setStatusFilter(e.target.value); setPage(0); }}
-              style={{ width: '100%', height: '42px', fontSize: '13px', appearance: 'none' }}
+              style={{
+                width: '100%',
+                height: '42px',
+                lineHeight: '42px',
+                fontSize: '13px',
+                padding: '0 36px 0 14px',
+                appearance: 'none',
+                WebkitAppearance: 'none',
+                MozAppearance: 'none',
+                boxSizing: 'border-box',
+                cursor: 'pointer',
+                background: 'rgba(255, 255, 255, 0.04)',
+                whiteSpace: 'nowrap'
+              }}
             >
               <option value="ALL">All Statuses</option>
               <option value="PENDING">New</option>
@@ -642,6 +656,17 @@ export default function Orders({ user }) {
               <option value="DELIVERED">Delivered</option>
               <option value="CANCELLED">Cancelled</option>
             </select>
+            <ChevronDown
+              size={15}
+              style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--text-muted)',
+                pointerEvents: 'none'
+              }}
+            />
           </div>
 
           {/* Custom Date Range Pickers */}

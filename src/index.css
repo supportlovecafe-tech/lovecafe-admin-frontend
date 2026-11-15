@@ -114,6 +114,13 @@ input, textarea, select { font-family: var(--font-body); }
   transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
 }
 
+select.input-premium, select.premium-input {
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: normal;
+  box-sizing: border-box;
+}
+
 select option {
   background-color: var(--surface-mid);
   color: var(--text-main);
