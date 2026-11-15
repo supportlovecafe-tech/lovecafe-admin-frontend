@@ -19,6 +19,8 @@ export interface Database {
           image_url: string | null
           owner_id: string | null
           created_at: string
+          is_active?: boolean
+          is_online_order_enabled?: boolean
         }
         Insert: {
           id?: string
@@ -29,6 +31,8 @@ export interface Database {
           image_url?: string | null
           owner_id?: string | null
           created_at?: string
+          is_active?: boolean
+          is_online_order_enabled?: boolean
         }
         Update: {
           id?: string
@@ -39,6 +43,8 @@ export interface Database {
           image_url?: string | null
           owner_id?: string | null
           created_at?: string
+          is_active?: boolean
+          is_online_order_enabled?: boolean
         }
       }
       screens: {

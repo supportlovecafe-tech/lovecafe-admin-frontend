@@ -8,6 +8,7 @@ export default function StaffManager() {
   const [loading, setLoading] = useState(true);
   const [expandedOutlet, setExpandedOutlet] = useState(null);
   const [editingStaff, setEditingStaff] = useState(null);
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   
   const [formData, setFormData] = useState({ 
     name: '', 
@@ -50,6 +51,7 @@ export default function StaffManager() {
   const resetForm = () => {
     setEditingStaff(null);
     setFormData({ name: '', employeeCode: '', email: '', pin: '', role: 'OUTLET_MANAGER', cinemaId: '', permissions: ['orders', 'menu', 'history', 'sales'] });
+    setIsFormModalOpen(false);
   };
 
   const handleEditStaff = (staff) => {
@@ -63,6 +65,7 @@ export default function StaffManager() {
       cinemaId: staff.cinema_id || '',
       permissions: staff.permissions || ['orders', 'menu', 'history', 'sales']
     });
+    setIsFormModalOpen(true);
   };
 
   const handleDeleteStaff = async (staffId) => {
@@ -112,19 +115,102 @@ export default function StaffManager() {
 
   const startAddStaff = (cinemaId) => {
     resetForm();
-    setFormData(prev => ({ ...prev, cinemaId }));
-    setExpandedOutlet(cinemaId);
+    setFormData(prev => ({ ...prev, cinemaId: cinemaId || '' }));
+    if (cinemaId) setExpandedOutlet(cinemaId);
+    setIsFormModalOpen(true);
   };
 
+  const renderStaffForm = () => (
+    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="input-group">
+        <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Outlet</label>
+        <select className="input-premium" value={formData.cinemaId} onChange={e => setFormData({...formData, cinemaId: e.target.value})} required>
+          <option value="" disabled style={{ background: 'var(--bg-dark)' }}>Select Outlet...</option>
+          {cinemas.map(c => <option key={c.id} value={c.id} style={{ background: 'var(--bg-dark)' }}>{c.name}</option>)}
+        </select>
+      </div>
+
+      <div className="input-group">
+        <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Full Name</label>
+        <input className="input-premium" placeholder="Staff Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+      </div>
+
+      <div className="input-group">
+        <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Employee / Staff Code (e.g. EMP-001)</label>
+        <input className="input-premium" placeholder="e.g. EMP-001" value={formData.employeeCode} onChange={e => setFormData({...formData, employeeCode: e.target.value.toUpperCase()})} style={{ textTransform: 'uppercase', fontFamily: 'monospace', letterSpacing: '1px', fontWeight: 'bold' }} />
+      </div>
+
+      <div className="input-group">
+        <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Google Login Email (Optional)</label>
+        <input className="input-premium" type="email" placeholder="staff@lovecafe.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+      </div>
+
+      <div className="input-group">
+        <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Login PIN</label>
+        <input className="input-premium" placeholder="1234" value={formData.pin} onChange={e => setFormData({...formData, pin: e.target.value.replace(/\D/g, '')})} maxLength={6} required style={{ fontFamily: 'monospace', fontSize: '20px', letterSpacing: '6px', textAlign: 'center' }} />
+      </div>
+
+      <div className="input-group">
+        <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Role</label>
+        <select className="input-premium" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
+          <option value="OUTLET_MANAGER" style={{ background: 'var(--bg-dark)' }}>Manager</option>
+          <option value="OUTLET_STAFF" style={{ background: 'var(--bg-dark)' }}>Staff</option>
+          <option value="OUTLET_CHEF" style={{ background: 'var(--bg-dark)' }}>Chef</option>
+        </select>
+      </div>
+
+      <div className="input-group">
+        <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Module Access</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          {[
+            { id: 'dashboard', label: 'Live POS' },
+            { id: 'outlet-pos', label: 'Outlet POS' },
+            { id: 'history', label: 'Order History' },
+            { id: 'sales', label: 'Sales Analytics' },
+            { id: 'menu', label: 'Menu Editor' },
+            { id: 'combos', label: 'Combo Deals' },
+            { id: 'offers', label: 'Promos & Offers' },
+            { id: 'inventory', label: 'Inventory Stock' },
+            { id: 'kds-config', label: 'KDS Routing' },
+            { id: 'targets', label: 'Target Leaderboard' }
+          ].map(mod => (
+            <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)' }}>
+              <input type="checkbox" checked={formData.permissions.includes(mod.id)} onChange={e => {
+                const checked = e.target.checked;
+                setFormData(prev => ({ ...prev, permissions: checked ? [...prev.permissions, mod.id] : prev.permissions.filter(p => p !== mod.id) }));
+              }} style={{ width: '14px', height: '14px', accentColor: 'var(--primary-glow)' }} />
+              {mod.label}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <button type="submit" className="btn-lucrative" style={{ padding: '14px', fontSize: '13px', marginTop: '8px' }} disabled={loading}>
+        {loading ? 'PROCESSING...' : (editingStaff ? 'SAVE CHANGES' : 'CREATE STAFF PIN')}
+      </button>
+    </form>
+  );
+
   return (
-    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '32px', height: 'calc(100vh - 120px)' }}>
-      <header>
-        <h1 style={{ fontSize: '32px', marginBottom: '8px', fontWeight: '900', letterSpacing: '-1.5px' }}>Outlet Credentials</h1>
-        <p style={{ color: 'var(--text-secondary)' }}>Manage outlet login access and staff PINs for each location.</p>
+    <div className="animate-fade-in admin-page-container">
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+        <div>
+          <h1 style={{ fontSize: '32px', marginBottom: '8px', fontWeight: '900', letterSpacing: '-1.5px' }}>Outlet Credentials</h1>
+          <p style={{ color: 'var(--text-secondary)' }}>Manage outlet login access and staff PINs for each location.</p>
+        </div>
+        <button 
+          type="button" 
+          onClick={() => startAddStaff()}
+          className="btn-lucrative"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 20px', borderRadius: '14px', fontWeight: 'bold', fontSize: '13px' }}
+        >
+          <Plus size={18} />
+          <span>ADD STAFF</span>
+        </button>
       </header>
 
-      <div style={{ display: 'flex', gap: '32px', flex: 1, minHeight: 0 }}>
-        <div style={{ flex: 1.8, display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
+      <div className="admin-split-layout">
+        <div className="admin-split-main">
           {cinemas.length === 0 && !loading && (
             <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)' }}>
               <Film size={48} opacity={0.2} style={{ marginBottom: '16px' }} />
@@ -182,8 +268,9 @@ export default function StaffManager() {
                     {staff.length === 0 ? (
                       <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>No staff members yet.</div>
                     ) : (
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
+                      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                        <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse' }}>
+                          <thead>
                           <tr style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.25)' }}>
                             <th style={{ padding: '12px 24px', textAlign: 'left' }}>Staff Code</th>
                             <th style={{ padding: '12px 24px', textAlign: 'left' }}>Name</th>
@@ -241,6 +328,7 @@ export default function StaffManager() {
                           ))}
                         </tbody>
                       </table>
+                    </div>
                     )}
 
                     <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
@@ -255,7 +343,7 @@ export default function StaffManager() {
           })}
         </div>
 
-        <div style={{ width: '360px' }}>
+        <div className="admin-split-side desktop-only-side" style={{ width: '360px' }}>
           <div className="glass-card animate-fade-in" style={{ padding: '28px', position: 'sticky', top: 0, border: '1px solid rgba(255,255,255,0.1)' }}>
             <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginBottom: '28px' }}>
               <div style={{ padding: '10px', background: 'rgba(255,47,146,0.1)', borderRadius: '12px', color: 'var(--primary-red)' }}>
@@ -268,77 +356,45 @@ export default function StaffManager() {
               {editingStaff && <button onClick={resetForm} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={18} /></button>}
             </div>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="input-group">
-                <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Outlet</label>
-                <select className="input-premium" value={formData.cinemaId} onChange={e => setFormData({...formData, cinemaId: e.target.value})} required>
-                  <option value="" disabled style={{ background: 'var(--bg-dark)' }}>Select Outlet...</option>
-                  {cinemas.map(c => <option key={c.id} value={c.id} style={{ background: 'var(--bg-dark)' }}>{c.name}</option>)}
-                </select>
-              </div>
-
-              <div className="input-group">
-                <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Full Name</label>
-                <input className="input-premium" placeholder="Staff Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
-              </div>
-
-              <div className="input-group">
-                <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Employee / Staff Code (e.g. EMP-001)</label>
-                <input className="input-premium" placeholder="e.g. EMP-001" value={formData.employeeCode} onChange={e => setFormData({...formData, employeeCode: e.target.value.toUpperCase()})} style={{ textTransform: 'uppercase', fontFamily: 'monospace', letterSpacing: '1px', fontWeight: 'bold' }} />
-              </div>
-
-              <div className="input-group">
-                <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Google Login Email (Optional)</label>
-                <input className="input-premium" type="email" placeholder="staff@lovecafe.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-              </div>
-
-              <div className="input-group">
-                <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Login PIN</label>
-                <input className="input-premium" placeholder="1234" value={formData.pin} onChange={e => setFormData({...formData, pin: e.target.value.replace(/\D/g, '')})} maxLength={6} required style={{ fontFamily: 'monospace', fontSize: '20px', letterSpacing: '6px', textAlign: 'center' }} />
-              </div>
-
-              <div className="input-group">
-                <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Role</label>
-                <select className="input-premium" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
-                  <option value="OUTLET_MANAGER" style={{ background: 'var(--bg-dark)' }}>Manager</option>
-                  <option value="OUTLET_STAFF" style={{ background: 'var(--bg-dark)' }}>Staff</option>
-                  <option value="OUTLET_CHEF" style={{ background: 'var(--bg-dark)' }}>Chef</option>
-                </select>
-              </div>
-
-              <div className="input-group">
-                <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', display: 'block' }}>Module Access</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  {[
-                    { id: 'dashboard', label: 'Live POS' },
-                    { id: 'outlet-pos', label: 'Outlet POS' },
-                    { id: 'history', label: 'Order History' },
-                    { id: 'sales', label: 'Sales Analytics' },
-                    { id: 'menu', label: 'Menu Editor' },
-                    { id: 'combos', label: 'Combo Deals' },
-                    { id: 'offers', label: 'Promos & Offers' },
-                    { id: 'inventory', label: 'Inventory Stock' },
-                    { id: 'kds-config', label: 'KDS Routing' },
-                    { id: 'targets', label: 'Target Leaderboard' }
-                  ].map(mod => (
-                    <label key={mod.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      <input type="checkbox" checked={formData.permissions.includes(mod.id)} onChange={e => {
-                        const checked = e.target.checked;
-                        setFormData(prev => ({ ...prev, permissions: checked ? [...prev.permissions, mod.id] : prev.permissions.filter(p => p !== mod.id) }));
-                      }} style={{ width: '14px', height: '14px', accentColor: 'var(--primary-glow)' }} />
-                      {mod.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <button type="submit" className="btn-lucrative" style={{ padding: '14px', fontSize: '13px', marginTop: '8px' }} disabled={loading}>
-                {loading ? 'PROCESSING...' : (editingStaff ? 'SAVE CHANGES' : 'CREATE STAFF PIN')}
-              </button>
-            </form>
+            {renderStaffForm()}
           </div>
         </div>
       </div>
+
+      {/* Mobile Modal for Add / Edit Staff */}
+      {isFormModalOpen && (
+        <div 
+          className="admin-mobile-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsFormModalOpen(false);
+              resetForm();
+            }
+          }}
+        >
+          <div className="admin-mobile-modal-card animate-scale-up">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <div style={{ padding: '8px', background: 'rgba(255,47,146,0.1)', borderRadius: '10px', color: 'var(--primary-red)' }}>
+                  {editingStaff ? <KeyRound size={20} /> : <Plus size={20} />}
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '18px', fontWeight: '900', margin: 0 }}>{editingStaff ? 'Update Staff' : 'Add Staff'}</h2>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Modify PIN and permissions.</div>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => { setIsFormModalOpen(false); resetForm(); }}
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '10px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {renderStaffForm()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

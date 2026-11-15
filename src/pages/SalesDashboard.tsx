@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { getCinemaCycleStart, getCinemaCycleEnd, getISTNow, toDateStr, getOrderBusinessDate, getCurrentCinemaBusinessDate } from '../lib/cinemaDate';
 import { 
   TrendingUp, 
   Download, 
@@ -24,7 +25,13 @@ import {
   AlertCircle,
   Users,
   Eye,
-  RotateCcw
+  RotateCcw,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  FileSpreadsheet,
+  Package
 } from 'lucide-react';
 import { 
   LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, 
@@ -114,18 +121,20 @@ const ChartContainer = ({ title, children, loading, headerAction, height }: any)
 export default function SalesDashboard({ user }: { user: any }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
-  const getISTNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  const toDateStr = (d: Date) => {
-    const pad = (n: number) => n < 10 ? '0' + n : n;
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  };
   const [startDate, setStartDate] = useState(() => {
     const d = getISTNow();
     d.setDate(d.getDate() - 30);
     return toDateStr(d);
   });
   const [endDate, setEndDate] = useState(() => toDateStr(getISTNow()));
+  const [tempStartDate, setTempStartDate] = useState(() => {
+    const d = getISTNow();
+    d.setDate(d.getDate() - 30);
+    return toDateStr(d);
+  });
+  const [tempEndDate, setTempEndDate] = useState(() => toDateStr(getISTNow()));
   const [showFilter, setShowFilter] = useState(false);
+  const activeFetchIdRef = useRef<number>(0);
   const [topProductMetric, setTopProductMetric] = useState<'revenue' | 'quantity'>('revenue');
 
   const [staffSalesList, setStaffSalesList] = useState<any[]>([]);
@@ -150,8 +159,27 @@ export default function SalesDashboard({ user }: { user: any }) {
   });
   const [targetSaving, setTargetSaving] = useState(false);
 
+  // --- Product-Wise Daily Sales Report State ---
+  const [productSalesList, setProductSalesList] = useState<any[]>([]);
+  const [productSalesLoading, setProductSalesLoading] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [productCategoryFilter, setProductCategoryFilter] = useState('ALL');
+  const [productChannelFilter, setProductChannelFilter] = useState<'ALL' | 'POS' | 'ONLINE'>('ALL');
+  const [onlineSalesStats, setOnlineSalesStats] = useState<{
+    total_orders: number;
+    total_sales: number;
+    cash_sales: number;
+    upi_sales: number;
+  }>({ total_orders: 0, total_sales: 0, cash_sales: 0, upi_sales: 0 });
+  const [productSortBy, setProductSortBy] = useState<
+    'date_desc' | 'date_asc' | 'revenue_desc' | 'revenue_asc' | 'qty_desc' | 'qty_asc' | 'name_asc'
+  >('date_desc');
+  const [productPage, setProductPage] = useState(1);
+  const [productPageSize, setProductPageSize] = useState(25);
+
   useEffect(() => {
     fetchAnalytics();
+    fetchProductSales();
   }, [cinemaId, startDate, endDate]);
 
   useEffect(() => {
@@ -305,6 +333,8 @@ export default function SalesDashboard({ user }: { user: any }) {
 
   const handleInspectTarget = (target: any) => {
     setSelectedTarget(target);
+    setTempStartDate(target.start_date);
+    setTempEndDate(target.end_date);
     setStartDate(target.start_date);
     setEndDate(target.end_date);
     setTimeout(() => {
@@ -325,12 +355,49 @@ export default function SalesDashboard({ user }: { user: any }) {
     ];
   }, [selectedTarget, targetsProgressMap]);
 
+  const formattedPaymentModes = useMemo(() => {
+    if (!data?.payment_modes || !Array.isArray(data.payment_modes)) return [];
+    const modeMap: Record<string, { mode: string; count: number; amount: number }> = {};
+    
+    data.payment_modes.forEach((pm: any) => {
+      let label = pm.mode || 'Other';
+      if (label === 'POS_CASH' || label === 'CASH') label = 'Cash';
+      else if (label === 'DEMO_UPI' || label === 'POS_UPI' || label === 'UPI') label = 'UPI';
+      else if (label === 'POS_SPLIT_CASH') label = 'Split Cash';
+      else if (label === 'POS_SPLIT_UPI') label = 'Split UPI';
+      else if (label === 'DEMO_CARD' || label === 'CARD') label = 'Card';
+      else if (label === 'PAY_ON_DELIVERY' || label === 'PAY_LATER') label = 'Pay on Delivery';
+      else label = label.replace(/_/g, ' ');
+
+      if (!modeMap[label]) {
+        modeMap[label] = { mode: label, count: 0, amount: 0 };
+      }
+      modeMap[label].count += Number(pm.count || 0);
+      modeMap[label].amount += Number(pm.amount || 0);
+    });
+
+    return Object.values(modeMap).map(m => ({
+      ...m,
+      amount: Math.round(m.amount * 100) / 100
+    }));
+  }, [data?.payment_modes]);
+
   const fetchAnalytics = async () => {
     if (!cinemaId || cinemaId === 'default') return;
+    const fetchId = ++activeFetchIdRef.current;
     setLoading(true);
     try {
-      const startIso = startDate ? new Date(new Date(startDate).getTime() - 19800000).toISOString() : null;
-      const endIso = endDate ? new Date(new Date(endDate).getTime() + 66599999).toISOString() : null;
+      if (!startDate || !endDate) {
+        setLoading(false);
+        return;
+      }
+      const startIso = getCinemaCycleStart(startDate);
+      const endIso = getCinemaCycleEnd(endDate);
+
+      if (!startIso || !endIso) {
+        setLoading(false);
+        return;
+      }
 
       const [analyticsRes, staffReportRes] = await Promise.all([
         supabase.rpc('get_sales_analytics', {
@@ -345,10 +412,25 @@ export default function SalesDashboard({ user }: { user: any }) {
         })
       ]);
 
-      if (analyticsRes.error) throw analyticsRes.error;
-      setData(analyticsRes.data);
+      if (fetchId !== activeFetchIdRef.current) return;
 
-      if (staffReportRes.data && staffReportRes.data.staff_sales) {
+      if (analyticsRes.error) {
+        console.error('Error fetching analytics:', analyticsRes.error);
+        setData({
+          metrics: { total_revenue: 0, total_orders: 0, avg_order_value: 0, revenue_growth: 0, order_growth: 0 },
+          trend: [],
+          top_products: [],
+          hourly_distribution: [],
+          payment_modes: []
+        });
+      } else {
+        setData(analyticsRes.data);
+      }
+
+      if (staffReportRes.error) {
+        console.error('Error fetching staff sales report:', staffReportRes.error);
+        setStaffSalesList([]);
+      } else if (staffReportRes.data && staffReportRes.data.staff_sales) {
         setStaffSalesList(staffReportRes.data.staff_sales);
       } else {
         setStaffSalesList([]);
@@ -356,8 +438,421 @@ export default function SalesDashboard({ user }: { user: any }) {
     } catch (err) {
       console.error('Error fetching analytics:', err);
     } finally {
-      setLoading(false);
+      if (fetchId === activeFetchIdRef.current) {
+        setLoading(false);
+      }
     }
+  };
+
+  const fetchProductSales = async () => {
+    if (!cinemaId || cinemaId === 'default') return;
+    const fetchId = activeFetchIdRef.current;
+    setProductSalesLoading(true);
+    try {
+      if (!startDate || !endDate) {
+        setProductSalesLoading(false);
+        return;
+      }
+      const startIso = getCinemaCycleStart(startDate);
+      const endIso = getCinemaCycleEnd(endDate);
+
+      if (!startIso || !endIso) {
+        setProductSalesLoading(false);
+        return;
+      }
+
+      let query = supabase
+        .from('orders')
+        .select('id, timestamp, items, status, staff_id, payment_method, total_amount, payment_status, metadata, collected_cash, return_cash')
+        .eq('cinema_id', cinemaId)
+        .not('status', 'in', '("CANCELLED","REFUNDED")')
+        .gte('timestamp', startIso)
+        .lte('timestamp', endIso);
+
+      const [ordersRes, menuRes, comboRes] = await Promise.all([
+        query.limit(10000),
+        supabase.from('food_items').select('id, name, category'),
+        supabase.from('combos').select('id, name')
+      ]);
+
+      if (fetchId !== activeFetchIdRef.current) return;
+
+      if (ordersRes.error) {
+        console.warn('Orders query error for product sales:', ordersRes.error.message);
+      }
+
+      const orders = ordersRes.data || [];
+
+      // Calculate Online App vs POS Counter Sales for the Staff Breakdown Table
+      const onlineOrders = orders.filter((o: any) => !o.staff_id);
+      const onlineOrdersCount = onlineOrders.length;
+      const onlineTotalSales = onlineOrders.reduce((sum: number, o: any) => sum + (Number(o.total_amount) || 0), 0);
+
+      const isOrderCash = (o: any) => {
+        if (o.payment_method === 'CASH' || o.payment_method === 'POS_CASH') return true;
+        if (o.metadata?.settled_payment_mode === 'CASH') return true;
+        return false;
+      };
+
+      const isOrderUpi = (o: any) => {
+        if (['DEMO_UPI', 'UPI', 'POS_UPI', 'DEMO_CARD', 'CARD', 'ONLINE'].includes(o.payment_method)) return true;
+        if (o.metadata?.settled_payment_mode === 'UPI') return true;
+        if (!isOrderCash(o) && o.payment_method !== 'PAY_ON_DELIVERY' && o.payment_method !== 'PAY_LATER') return true;
+        return false;
+      };
+
+      const onlineCashSales = onlineOrders.reduce((sum: number, o: any) => {
+        if (o.payment_method === 'POS_SPLIT') {
+          return sum + (Number(o.metadata?.split_cash) || (Number(o.collected_cash || 0) - Number(o.return_cash || 0)) || 0);
+        }
+        if (isOrderCash(o)) {
+          return sum + (Number(o.total_amount) || 0);
+        }
+        return sum;
+      }, 0);
+
+      const onlineUpiSales = onlineOrders.reduce((sum: number, o: any) => {
+        if (o.payment_method === 'POS_SPLIT') {
+          return sum + (Number(o.metadata?.split_upi) || (Number(o.total_amount || 0) - (Number(o.collected_cash || 0) - Number(o.return_cash || 0))) || 0);
+        }
+        if (isOrderUpi(o)) {
+          return sum + (Number(o.total_amount) || 0);
+        }
+        return sum;
+      }, 0);
+
+      setOnlineSalesStats({
+        total_orders: onlineOrdersCount,
+        total_sales: Math.round(onlineTotalSales * 100) / 100,
+        cash_sales: Math.round(onlineCashSales * 100) / 100,
+        upi_sales: Math.round(onlineUpiSales * 100) / 100
+      });
+
+      // Quick lookup map for categories
+      const categoryMap = new Map<string, string>();
+      (menuRes.data || []).forEach((m: any) => {
+        if (m.name) categoryMap.set(m.name.trim().toLowerCase(), m.category || 'General');
+        if (m.id) categoryMap.set(m.id, m.category || 'General');
+      });
+
+      const comboSet = new Set<string>();
+      (comboRes.data || []).forEach((c: any) => {
+        if (c.name) comboSet.add(c.name.trim().toLowerCase());
+        if (c.id) comboSet.add(c.id);
+      });
+
+      // Day-wise product map: key is `${date}___${productName.toLowerCase()}`
+      const map = new Map<string, {
+        date: string;
+        productName: string;
+        category: string;
+        quantity: number;
+        totalRevenue: number;
+        orderCount: number;
+        posQty: number;
+        posRevenue: number;
+        posOrderCount: number;
+        onlineQty: number;
+        onlineRevenue: number;
+        onlineOrderCount: number;
+      }>();
+
+      for (const order of orders) {
+        const orderDate = getOrderBusinessDate(order.timestamp) || (order.timestamp ? String(order.timestamp).slice(0, 10) : null);
+        if (!orderDate) continue;
+
+        // CRITICAL GUARD: strictly only include dates within [startDate, endDate]
+        if (orderDate < startDate || orderDate > endDate) continue;
+
+        const isOnline = !order.staff_id;
+
+        let items: any[] = [];
+        try {
+          items = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []);
+        } catch {
+          items = [];
+        }
+
+        const countedItemsInThisOrder = new Set<string>();
+
+        for (const it of items) {
+          const rawName = it.food_name || it.name;
+          if (!rawName) continue;
+          const productName = String(rawName).trim();
+          const qty = Number(it.quantity) || 1;
+          const price = Number(it.price || it.food_price || 0);
+          const revenue = qty * price;
+
+          let cat = it.food_category || it.category;
+          if (!cat) {
+            const key = productName.toLowerCase();
+            if (categoryMap.has(key)) {
+              cat = categoryMap.get(key);
+            } else if (it.food_id && categoryMap.has(it.food_id)) {
+              cat = categoryMap.get(it.food_id);
+            } else if (it.id && categoryMap.has(it.id)) {
+              cat = categoryMap.get(it.id);
+            } else if (comboSet.has(key) || (it.food_id && comboSet.has(it.food_id)) || (it.id && comboSet.has(it.id))) {
+              cat = 'Combos';
+            } else {
+              cat = 'General';
+            }
+          }
+
+          const aggKey = `${orderDate}___${productName.toLowerCase()}`;
+          const existing = map.get(aggKey);
+          if (existing) {
+            existing.quantity += qty;
+            existing.totalRevenue += revenue;
+
+            if (isOnline) {
+              existing.onlineQty += qty;
+              existing.onlineRevenue += revenue;
+              if (!countedItemsInThisOrder.has(aggKey + '_online')) {
+                existing.onlineOrderCount += 1;
+                countedItemsInThisOrder.add(aggKey + '_online');
+              }
+            } else {
+              existing.posQty += qty;
+              existing.posRevenue += revenue;
+              if (!countedItemsInThisOrder.has(aggKey + '_pos')) {
+                existing.posOrderCount += 1;
+                countedItemsInThisOrder.add(aggKey + '_pos');
+              }
+            }
+
+            if (!countedItemsInThisOrder.has(aggKey)) {
+              existing.orderCount += 1;
+              countedItemsInThisOrder.add(aggKey);
+            }
+          } else {
+            map.set(aggKey, {
+              date: orderDate,
+              productName,
+              category: String(cat || 'General').toUpperCase(),
+              quantity: qty,
+              totalRevenue: revenue,
+              orderCount: 1,
+              posQty: isOnline ? 0 : qty,
+              posRevenue: isOnline ? 0 : revenue,
+              posOrderCount: isOnline ? 0 : 1,
+              onlineQty: isOnline ? qty : 0,
+              onlineRevenue: isOnline ? revenue : 0,
+              onlineOrderCount: isOnline ? 1 : 0
+            });
+            countedItemsInThisOrder.add(aggKey);
+            if (isOnline) countedItemsInThisOrder.add(aggKey + '_online');
+            else countedItemsInThisOrder.add(aggKey + '_pos');
+          }
+        }
+      }
+
+      const list = Array.from(map.values()).map(item => ({
+        date: item.date,
+        productName: item.productName,
+        category: item.category,
+        quantity: item.quantity,
+        revenue: Math.round(item.totalRevenue * 100) / 100,
+        unitPrice: item.quantity > 0 ? Math.round((item.totalRevenue / item.quantity) * 100) / 100 : 0,
+        orderCount: item.orderCount,
+        posQty: item.posQty,
+        posRevenue: Math.round(item.posRevenue * 100) / 100,
+        posOrderCount: item.posOrderCount,
+        onlineQty: item.onlineQty,
+        onlineRevenue: Math.round(item.onlineRevenue * 100) / 100,
+        onlineOrderCount: item.onlineOrderCount
+      }));
+
+      setProductSalesList(list);
+    } catch (err) {
+      console.error('Error fetching product sales report:', err);
+      setProductSalesList([]);
+    } finally {
+      setProductSalesLoading(false);
+    }
+  };
+
+  const formatDayDate = (dateStr: string) => {
+    if (!dateStr) return '—';
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'short' });
+      }
+      return dateStr;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const getCategoryBadgeStyle = (category: string) => {
+    const c = (category || '').toUpperCase();
+    if (c.includes('BEVERAGE') || c.includes('DRINK') || c.includes('COFFEE') || c.includes('TEA') || c.includes('BOBA')) {
+      return { bg: 'rgba(0, 210, 255, 0.12)', border: 'rgba(0, 210, 255, 0.3)', color: '#00D2FF' };
+    }
+    if (c.includes('PIZZA') || c.includes('BURGER')) {
+      return { bg: 'rgba(255, 47, 146, 0.12)', border: 'rgba(255, 47, 146, 0.3)', color: '#FF2F92' };
+    }
+    if (c.includes('SNACK') || c.includes('POPCORN') || c.includes('NACHOS')) {
+      return { bg: 'rgba(255, 179, 106, 0.12)', border: 'rgba(255, 179, 106, 0.3)', color: '#FFB36A' };
+    }
+    if (c.includes('COMBO')) {
+      return { bg: 'rgba(168, 85, 247, 0.12)', border: 'rgba(168, 85, 247, 0.3)', color: '#C084FC' };
+    }
+    if (c.includes('DESSERT') || c.includes('SWEET') || c.includes('ICE')) {
+      return { bg: 'rgba(236, 72, 153, 0.12)', border: 'rgba(236, 72, 153, 0.3)', color: '#F472B6' };
+    }
+    return { bg: 'rgba(255, 255, 255, 0.08)', border: 'rgba(255, 255, 255, 0.15)', color: 'rgba(255, 255, 255, 0.8)' };
+  };
+
+  const availableProductCategories = useMemo(() => {
+    const set = new Set<string>();
+    productSalesList.forEach(p => {
+      if (p.category) set.add(p.category);
+    });
+    return Array.from(set).sort();
+  }, [productSalesList]);
+
+  const filteredProductSales = useMemo(() => {
+    let list = productSalesList.map(item => {
+      if (productChannelFilter === 'POS') {
+        return {
+          ...item,
+          quantity: item.posQty,
+          revenue: item.posRevenue,
+          unitPrice: item.posQty > 0 ? Math.round((item.posRevenue / item.posQty) * 100) / 100 : item.unitPrice,
+          orderCount: item.posOrderCount,
+          channel: 'POS'
+        };
+      }
+      if (productChannelFilter === 'ONLINE') {
+        return {
+          ...item,
+          quantity: item.onlineQty,
+          revenue: item.onlineRevenue,
+          unitPrice: item.onlineQty > 0 ? Math.round((item.onlineRevenue / item.onlineQty) * 100) / 100 : item.unitPrice,
+          orderCount: item.onlineOrderCount,
+          channel: 'ONLINE'
+        };
+      }
+      return {
+        ...item,
+        channel: item.posQty > 0 && item.onlineQty > 0 ? 'BOTH' : (item.onlineQty > 0 ? 'ONLINE' : 'POS')
+      };
+    });
+
+    // If filtered by POS, exclude records with 0 posQty
+    if (productChannelFilter === 'POS') {
+      list = list.filter(item => item.quantity > 0);
+    }
+    // If filtered by ONLINE, exclude records with 0 onlineQty
+    else if (productChannelFilter === 'ONLINE') {
+      list = list.filter(item => item.quantity > 0);
+    }
+
+    if (productSearch.trim()) {
+      const q = productSearch.trim().toLowerCase();
+      list = list.filter(p =>
+        p.productName.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        p.date.includes(q)
+      );
+    }
+
+    if (productCategoryFilter !== 'ALL') {
+      list = list.filter(p => p.category.toUpperCase() === productCategoryFilter.toUpperCase());
+    }
+
+    list.sort((a, b) => {
+      if (productSortBy === 'date_desc') return b.date.localeCompare(a.date) || b.revenue - a.revenue;
+      if (productSortBy === 'date_asc') return a.date.localeCompare(b.date) || b.revenue - a.revenue;
+      if (productSortBy === 'revenue_desc') return b.revenue - a.revenue || b.quantity - a.quantity;
+      if (productSortBy === 'revenue_asc') return a.revenue - b.revenue || a.quantity - b.quantity;
+      if (productSortBy === 'qty_desc') return b.quantity - a.quantity || b.revenue - a.revenue;
+      if (productSortBy === 'qty_asc') return a.quantity - b.quantity || a.revenue - b.revenue;
+      if (productSortBy === 'name_asc') return a.productName.localeCompare(b.productName) || b.date.localeCompare(a.date);
+      return 0;
+    });
+
+    return list;
+  }, [productSalesList, productChannelFilter, productSearch, productCategoryFilter, productSortBy]);
+
+  const productSummary = useMemo(() => {
+    let totalUnits = 0;
+    let totalRevenue = 0;
+    const uniqueItems = new Set<string>();
+    const uniqueDays = new Set<string>();
+
+    filteredProductSales.forEach(item => {
+      totalUnits += item.quantity;
+      totalRevenue += item.revenue;
+      uniqueItems.add(item.productName);
+      uniqueDays.add(item.date);
+    });
+
+    return {
+      totalUnits,
+      totalRevenue,
+      uniqueItemsCount: uniqueItems.size,
+      uniqueDaysCount: uniqueDays.size
+    };
+  }, [filteredProductSales]);
+
+  useEffect(() => {
+    setProductPage(1);
+  }, [productChannelFilter, productSearch, productCategoryFilter, productSortBy, productPageSize, startDate, endDate]);
+
+  const totalProductPages = Math.max(1, Math.ceil(filteredProductSales.length / productPageSize));
+  const paginatedProductSales = useMemo(() => {
+    const startIndex = (productPage - 1) * productPageSize;
+    return filteredProductSales.slice(startIndex, startIndex + productPageSize);
+  }, [filteredProductSales, productPage, productPageSize]);
+
+  const exportProductSalesCSV = () => {
+    if (!filteredProductSales || filteredProductSales.length === 0) {
+      alert('No product sales records to export for the selected filters.');
+      return;
+    }
+
+    const headers = [
+      'Business Date',
+      'Formatted Date',
+      'Product Name',
+      'Category',
+      'Sales Channel',
+      'Quantity Sold (Units)',
+      'POS Counter Qty',
+      'Online App Qty',
+      'Avg Unit Price (INR)',
+      'Total Sales Revenue (INR)',
+      'Orders Count'
+    ];
+
+    const rows = filteredProductSales.map(item => [
+      item.date,
+      `"${formatDayDate(item.date)}"`,
+      `"${(item.productName || '').replace(/"/g, '""')}"`,
+      `"${(item.category || 'General').replace(/"/g, '""')}"`,
+      `"${productChannelFilter === 'POS' ? 'POS Counter Only' : productChannelFilter === 'ONLINE' ? 'Online App Only' : (item.channel === 'BOTH' ? 'Both (POS & App)' : (item.channel === 'ONLINE' ? 'Online App Only' : 'POS Counter Only'))}"`,
+      item.quantity,
+      item.posQty || 0,
+      item.onlineQty || 0,
+      item.unitPrice,
+      item.revenue,
+      item.orderCount
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Product_Sales_Report_${startDate}_to_${endDate}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const staffChartData = useMemo(() => {
@@ -389,33 +884,47 @@ export default function SalesDashboard({ user }: { user: any }) {
     return list;
   }, [data]);
 
-  const setDatePreset = (preset: 'today' | 'yesterday' | '7days' | '30days' | 'this_month') => {
+  const setDatePreset = (preset: 'today' | 'yesterday' | 'yesterday_today' | '7days' | '30days' | 'this_month') => {
     const now = getISTNow();
+    let s = '';
+    let e = '';
     
     if (preset === 'today') {
       const todayStr = toDateStr(now);
-      setStartDate(todayStr);
-      setEndDate(todayStr);
+      s = todayStr;
+      e = todayStr;
     } else if (preset === 'yesterday') {
       const yest = new Date(now);
       yest.setDate(yest.getDate() - 1);
       const yestStr = toDateStr(yest);
-      setStartDate(yestStr);
-      setEndDate(yestStr);
+      s = yestStr;
+      e = yestStr;
+    } else if (preset === 'yesterday_today') {
+      const yest = new Date(now);
+      yest.setDate(yest.getDate() - 1);
+      s = toDateStr(yest);
+      e = toDateStr(now);
     } else if (preset === '7days') {
       const past7 = new Date(now);
       past7.setDate(past7.getDate() - 7);
-      setStartDate(toDateStr(past7));
-      setEndDate(toDateStr(now));
+      s = toDateStr(past7);
+      e = toDateStr(now);
     } else if (preset === '30days') {
       const past30 = new Date(now);
       past30.setDate(past30.getDate() - 30);
-      setStartDate(toDateStr(past30));
-      setEndDate(toDateStr(now));
+      s = toDateStr(past30);
+      e = toDateStr(now);
     } else if (preset === 'this_month') {
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      setStartDate(toDateStr(firstDay));
-      setEndDate(toDateStr(now));
+      s = toDateStr(firstDay);
+      e = toDateStr(now);
+    }
+
+    if (s && e) {
+      setTempStartDate(s);
+      setTempEndDate(e);
+      setStartDate(s);
+      setEndDate(e);
     }
     setShowFilter(false);
   };
@@ -475,7 +984,11 @@ export default function SalesDashboard({ user }: { user: any }) {
         
         <div className="analytics-date-action-wrap">
           <button 
-            onClick={() => setShowFilter(true)}
+            onClick={() => {
+              setTempStartDate(startDate);
+              setTempEndDate(endDate);
+              setShowFilter(true);
+            }}
             className="btn-lucrative analytics-filter-trigger-btn"
             style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
           >
@@ -542,6 +1055,7 @@ export default function SalesDashboard({ user }: { user: any }) {
                 {[
                   { label: 'Today', key: 'today' },
                   { label: 'Yesterday', key: 'yesterday' },
+                  { label: 'Yest & Today', key: 'yesterday_today' },
                   { label: 'Last 7 Days', key: '7days' },
                   { label: 'Last 30 Days', key: '30days' },
                   { label: 'This Month', key: 'this_month' },
@@ -573,15 +1087,42 @@ export default function SalesDashboard({ user }: { user: any }) {
               <div style={{ display: 'flex', gap: '10px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontWeight: '700' }}>START</label>
-                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-premium" style={{ width: '100%', fontSize: '12px', padding: '10px' }} />
+                  <input 
+                    type="date" 
+                    value={tempStartDate} 
+                    onChange={e => setTempStartDate(e.target.value)} 
+                    className="input-premium" 
+                    style={{ width: '100%', fontSize: '12px', padding: '10px' }} 
+                  />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontWeight: '700' }}>END</label>
-                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-premium" style={{ width: '100%', fontSize: '12px', padding: '10px' }} />
+                  <input 
+                    type="date" 
+                    value={tempEndDate} 
+                    onChange={e => setTempEndDate(e.target.value)} 
+                    className="input-premium" 
+                    style={{ width: '100%', fontSize: '12px', padding: '10px' }} 
+                  />
                 </div>
               </div>
               <button 
-                onClick={() => setShowFilter(false)} 
+                type="button"
+                onClick={() => {
+                  if (!tempStartDate || !tempEndDate) {
+                    alert('Please select both a Start Date and an End Date.');
+                    return;
+                  }
+                  let finalStart = tempStartDate;
+                  let finalEnd = tempEndDate;
+                  if (finalStart > finalEnd) {
+                    finalEnd = finalStart;
+                    setTempEndDate(finalStart);
+                  }
+                  setStartDate(finalStart);
+                  setEndDate(finalEnd);
+                  setShowFilter(false);
+                }} 
                 className="btn-lucrative" 
                 style={{ width: '100%', padding: '12px', fontSize: '12px' }}
               >
@@ -871,7 +1412,7 @@ export default function SalesDashboard({ user }: { user: any }) {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={data?.payment_modes}
+                data={formattedPaymentModes}
                 cx="50%"
                 cy="50%"
                 innerRadius={45}
@@ -880,7 +1421,7 @@ export default function SalesDashboard({ user }: { user: any }) {
                 dataKey="amount"
                 nameKey="mode"
               >
-                {data?.payment_modes?.map((entry: any, index: number) => (
+                {formattedPaymentModes.map((entry: any, index: number) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
@@ -1353,8 +1894,8 @@ export default function SalesDashboard({ user }: { user: any }) {
                 <th style={{ padding: '14px 20px' }}>Role</th>
                 <th style={{ padding: '14px 20px', textAlign: 'right' }}>Orders Taken</th>
                 <th style={{ padding: '14px 20px', textAlign: 'right' }}>Total Sales (₹)</th>
-                <th style={{ padding: '14px 20px', textAlign: 'right' }}>Cash Handled (₹)</th>
-                <th style={{ padding: '14px 20px', textAlign: 'right' }}>Avg Ticket (₹)</th>
+                <th style={{ padding: '14px 20px', textAlign: 'right' }}>💵 Cash Sales (₹)</th>
+                <th style={{ padding: '14px 20px', textAlign: 'right' }}>📱 UPI Sales (₹)</th>
               </tr>
             </thead>
             <tbody>
@@ -1400,16 +1941,71 @@ export default function SalesDashboard({ user }: { user: any }) {
                       {staff.total_orders}
                     </td>
                     <td style={{ padding: '14px 20px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: 'white' }}>
-                      ₹{staff.total_sales.toLocaleString()}
+                      ₹{(staff.total_sales || 0).toLocaleString()}
                     </td>
-                    <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '13px', color: 'var(--text-muted)' }}>
-                      ₹{staff.cash_collected.toLocaleString()}
+                    <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '13px', fontWeight: '700', color: '#4ade80' }}>
+                      ₹{(staff.cash_sales || 0).toLocaleString()}
                     </td>
-                    <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '13px', color: 'var(--text-muted)' }}>
-                      ₹{staff.avg_order_value}
+                    <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '13px', fontWeight: '700', color: 'var(--secondary-glow)' }}>
+                      ₹{(staff.upi_sales || 0).toLocaleString()}
                     </td>
                   </tr>
                 ))
+              )}
+
+              {/* 🌐 Online App Orders Row (Desktop) */}
+              {onlineSalesStats.total_orders > 0 && (
+                <tr style={{ 
+                  borderTop: '2px solid rgba(0, 210, 255, 0.3)', 
+                  background: 'linear-gradient(90deg, rgba(0, 210, 255, 0.08), rgba(255, 47, 146, 0.03))' 
+                }}>
+                  <td style={{ padding: '14px 20px' }}>
+                    <span style={{ 
+                      width: '26px', height: '26px', borderRadius: '50%', 
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '13px', fontWeight: '800',
+                      background: 'rgba(0, 210, 255, 0.18)',
+                      border: '1px solid rgba(0, 210, 255, 0.4)',
+                      color: '#00d2ff'
+                    }} title="Customer Online Mobile App Orders">
+                      🌐
+                    </span>
+                  </td>
+                  <td style={{ padding: '14px 20px', fontWeight: '800', fontSize: '14px', color: 'white' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span>Online App Orders</span>
+                      <span style={{ 
+                        fontSize: '10px', padding: '2px 7px', borderRadius: '4px', 
+                        background: 'rgba(0, 210, 255, 0.15)', color: '#00d2ff', 
+                        border: '1px solid rgba(0, 210, 255, 0.3)', fontWeight: '800' 
+                      }}>
+                        CUSTOMER APP / WEB
+                      </span>
+                    </div>
+                  </td>
+                  <td style={{ padding: '14px 20px' }}>
+                    <span style={{
+                      padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '800',
+                      background: 'rgba(0, 210, 255, 0.12)',
+                      color: '#00d2ff',
+                      border: '1px solid rgba(0, 210, 255, 0.25)'
+                    }}>
+                      ONLINE
+                    </span>
+                  </td>
+                  <td style={{ padding: '14px 20px', textAlign: 'right', fontWeight: '800', fontSize: '14px', color: 'white' }}>
+                    {onlineSalesStats.total_orders}
+                  </td>
+                  <td style={{ padding: '14px 20px', textAlign: 'right', fontWeight: '900', fontSize: '15px', color: '#00d2ff' }}>
+                    ₹{onlineSalesStats.total_sales.toLocaleString()}
+                  </td>
+                  <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '13px', fontWeight: '700', color: '#4ade80' }}>
+                    ₹{onlineSalesStats.cash_sales.toLocaleString()}
+                  </td>
+                  <td style={{ padding: '14px 20px', textAlign: 'right', fontSize: '13px', fontWeight: '700', color: 'var(--secondary-glow)' }}>
+                    ₹{onlineSalesStats.upi_sales.toLocaleString()}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
@@ -1421,7 +2017,7 @@ export default function SalesDashboard({ user }: { user: any }) {
             <div style={{ padding: '30px', textAlign: 'center' }}>
               <div className="spinner" style={{ margin: '0 auto' }} />
             </div>
-          ) : staffSalesList.length === 0 ? (
+          ) : staffSalesList.length === 0 && onlineSalesStats.total_orders === 0 ? (
             <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
               No counter sales recorded for staff during this period.
             </div>
@@ -1477,21 +2073,665 @@ export default function SalesDashboard({ user }: { user: any }) {
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: '8px' }}>
                     <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Total Sales</div>
-                    <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--primary-glow)', marginTop: '1px' }}>₹{staff.total_sales.toLocaleString()}</div>
+                    <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--primary-glow)', marginTop: '1px' }}>₹{(staff.total_sales || 0).toLocaleString()}</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: '8px' }}>
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Cash Handled</div>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: 'white', marginTop: '1px' }}>₹{staff.cash_collected.toLocaleString()}</div>
+                  <div style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', padding: '6px 8px', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '9px', color: '#4ade80', textTransform: 'uppercase', fontWeight: '700' }}>💵 Cash Sales</div>
+                    <div style={{ fontSize: '12px', fontWeight: '800', color: '#4ade80', marginTop: '1px' }}>₹{(staff.cash_sales || 0).toLocaleString()}</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: '8px' }}>
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Avg Ticket</div>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--accent-gold)', marginTop: '1px' }}>₹{staff.avg_order_value}</div>
+                  <div style={{ background: 'rgba(0,210,255,0.06)', border: '1px solid rgba(0,210,255,0.2)', padding: '6px 8px', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '9px', color: 'var(--secondary-glow)', textTransform: 'uppercase', fontWeight: '700' }}>📱 UPI Sales</div>
+                    <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--secondary-glow)', marginTop: '1px' }}>₹{(staff.upi_sales || 0).toLocaleString()}</div>
                   </div>
                 </div>
               </div>
             ))
           )}
+
+          {/* 🌐 Online App Orders Card (Mobile) */}
+          {onlineSalesStats.total_orders > 0 && (
+            <div 
+              style={{
+                background: 'linear-gradient(135deg, rgba(0, 210, 255, 0.08), rgba(255, 47, 146, 0.04))',
+                border: '1px solid rgba(0, 210, 255, 0.3)',
+                borderRadius: '14px',
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                marginTop: '4px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ 
+                    width: '24px', height: '24px', borderRadius: '50%', 
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '13px', fontWeight: '800',
+                    background: 'rgba(0, 210, 255, 0.18)',
+                    border: '1px solid rgba(0, 210, 255, 0.4)',
+                    color: '#00d2ff',
+                    flexShrink: 0
+                  }}>
+                    🌐
+                  </span>
+                  <span style={{ fontWeight: '800', fontSize: '14px', color: 'white' }}>
+                    Online App Orders
+                  </span>
+                </div>
+                <span style={{
+                  padding: '2px 7px', borderRadius: '5px', fontSize: '10px', fontWeight: '800',
+                  background: 'rgba(0, 210, 255, 0.15)',
+                  color: '#00d2ff',
+                  border: '1px solid rgba(0, 210, 255, 0.3)'
+                }}>
+                  ONLINE / APP
+                </span>
+              </div>
+
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(2, 1fr)', 
+                gap: '6px', 
+                paddingTop: '8px', 
+                borderTop: '1px solid rgba(255,255,255,0.04)' 
+              }}>
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Orders</div>
+                  <div style={{ fontSize: '14px', fontWeight: '800', color: 'white', marginTop: '1px' }}>{onlineSalesStats.total_orders}</div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Total Sales</div>
+                  <div style={{ fontSize: '14px', fontWeight: '800', color: '#00d2ff', marginTop: '1px' }}>₹{onlineSalesStats.total_sales.toLocaleString()}</div>
+                </div>
+                <div style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', padding: '6px 8px', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '9px', color: '#4ade80', textTransform: 'uppercase', fontWeight: '700' }}>💵 Cash Sales</div>
+                  <div style={{ fontSize: '12px', fontWeight: '800', color: '#4ade80', marginTop: '1px' }}>₹{onlineSalesStats.cash_sales.toLocaleString()}</div>
+                </div>
+                <div style={{ background: 'rgba(0,210,255,0.06)', border: '1px solid rgba(0,210,255,0.2)', padding: '6px 8px', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '9px', color: 'var(--secondary-glow)', textTransform: 'uppercase', fontWeight: '700' }}>📱 UPI Sales</div>
+                  <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--secondary-glow)', marginTop: '1px' }}>₹{onlineSalesStats.upi_sales.toLocaleString()}</div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* PRODUCT-WISE DAILY SALES REPORT (Option B Flat Log Table)                 */}
+      {/* ========================================================================= */}
+      <div id="product-sales-report-section" className="glass-card" style={{ padding: 0, overflow: 'hidden', marginTop: '24px' }}>
+        
+        {/* Section Header */}
+        <div style={{ 
+          padding: '18px 20px', 
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Package size={18} color="var(--primary-glow)" />
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'white' }}>
+                Product-Wise Daily Sales Report
+              </h3>
+              <span style={{
+                fontSize: '11px',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'rgba(255, 47, 146, 0.12)',
+                color: 'var(--primary-glow)',
+                fontWeight: '700',
+                border: '1px solid rgba(255, 47, 146, 0.25)'
+              }}>
+                {startDate} — {endDate}
+              </span>
+            </div>
+            <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+              Detailed day-by-day item sales log showing units sold, unit prices, and revenue for the selected date filter.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={exportProductSalesCSV}
+              disabled={productSalesLoading || filteredProductSales.length === 0}
+              className="btn-lucrative"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '9px 16px',
+                fontSize: '12px',
+                fontWeight: '700',
+                cursor: productSalesLoading || filteredProductSales.length === 0 ? 'not-allowed' : 'pointer',
+                opacity: productSalesLoading || filteredProductSales.length === 0 ? 0.6 : 1
+              }}
+              title="Download CSV / Excel report"
+            >
+              <Download size={14} />
+              <span>Export CSV</span>
+              <span style={{
+                background: 'rgba(0,0,0,0.3)',
+                padding: '1px 6px',
+                borderRadius: '4px',
+                fontSize: '10px',
+                fontWeight: '800'
+              }}>
+                {filteredProductSales.length}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Quick KPI Summary Bar */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+          gap: '10px',
+          padding: '14px 18px',
+          background: 'rgba(255, 255, 255, 0.02)',
+          borderBottom: '1px solid rgba(255,255,255,0.05)'
+        }}>
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.5px' }}>Total Product Sales</div>
+            <div style={{ fontSize: '18px', fontWeight: '900', color: 'white', marginTop: '2px' }}>
+              ₹{productSummary.totalRevenue.toLocaleString()}
+            </div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.5px' }}>Total Units Sold</div>
+            <div style={{ fontSize: '18px', fontWeight: '900', color: 'var(--secondary-glow)', marginTop: '2px' }}>
+              {productSummary.totalUnits.toLocaleString()} pcs
+            </div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.5px' }}>Unique Items Sold</div>
+            <div style={{ fontSize: '18px', fontWeight: '900', color: 'var(--accent-gold)', marginTop: '2px' }}>
+              {productSummary.uniqueItemsCount} items
+            </div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.5px' }}>Sales Days Count</div>
+            <div style={{ fontSize: '18px', fontWeight: '900', color: '#4ade80', marginTop: '2px' }}>
+              {productSummary.uniqueDaysCount} days
+            </div>
+          </div>
+        </div>
+
+        {/* Filter & Search Bar */}
+        <div style={{
+          padding: '14px 18px',
+          background: 'rgba(255,255,255,0.015)',
+          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '10px',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          {/* Left: Search input */}
+          <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: '360px' }}>
+            <Search size={15} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+            <input
+              type="text"
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              placeholder="Search product or category..."
+              className="input-premium"
+              style={{
+                width: '100%',
+                paddingLeft: '36px',
+                paddingRight: productSearch ? '30px' : '12px',
+                paddingTop: '8px',
+                paddingBottom: '8px',
+                fontSize: '12px',
+                borderRadius: '8px'
+              }}
+            />
+            {productSearch && (
+              <button
+                onClick={() => setProductSearch('')}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          {/* Right: Dropdown Filters & Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Channel Filter (All Channels vs POS Counter vs Online App) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '700' }}>Channel:</span>
+              <select
+                value={productChannelFilter}
+                onChange={(e) => setProductChannelFilter(e.target.value as any)}
+                className="input-premium"
+                style={{
+                  padding: '7px 10px',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  borderRadius: '8px',
+                  background: '#0a0f1e',
+                  border: productChannelFilter !== 'ALL' ? '1px solid var(--secondary-glow)' : '1px solid rgba(255,255,255,0.1)'
+                }}
+              >
+                <option value="ALL">All Channels</option>
+                <option value="POS">🖥️ POS Counter Only</option>
+                <option value="ONLINE">📱 Online App Only</option>
+              </select>
+            </div>
+
+            {/* Category Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '700' }}>Category:</span>
+              <select
+                value={productCategoryFilter}
+                onChange={(e) => setProductCategoryFilter(e.target.value)}
+                className="input-premium"
+                style={{
+                  padding: '7px 10px',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  borderRadius: '8px',
+                  background: '#0a0f1e'
+                }}
+              >
+                <option value="ALL">All Categories ({availableProductCategories.length})</option>
+                {availableProductCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Sort Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '700' }}>Sort:</span>
+              <select
+                value={productSortBy}
+                onChange={(e) => setProductSortBy(e.target.value as any)}
+                className="input-premium"
+                style={{
+                  padding: '7px 10px',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  borderRadius: '8px',
+                  background: '#0a0f1e'
+                }}
+              >
+                <option value="date_desc">Date: Newest First</option>
+                <option value="date_asc">Date: Oldest First</option>
+                <option value="revenue_desc">Sales: High to Low</option>
+                <option value="revenue_asc">Sales: Low to High</option>
+                <option value="qty_desc">Quantity: High to Low</option>
+                <option value="qty_asc">Quantity: Low to High</option>
+                <option value="name_asc">Product Name: A to Z</option>
+              </select>
+            </div>
+
+            {/* Rows Per Page */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '700' }}>Rows:</span>
+              <select
+                value={productPageSize}
+                onChange={(e) => setProductPageSize(Number(e.target.value))}
+                className="input-premium"
+                style={{
+                  padding: '7px 8px',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  borderRadius: '8px',
+                  background: '#0a0f1e'
+                }}
+              >
+                <option value={15}>15</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop Table View */}
+        <div className="analytics-desktop-table" style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ background: 'rgba(255,255,255,0.02)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', color: 'rgba(255,255,255,0.45)' }}>
+                <th style={{ padding: '14px 18px', width: '16%' }}>Date</th>
+                <th style={{ padding: '14px 18px', width: '25%' }}>Product / Item</th>
+                <th style={{ padding: '14px 18px', width: '15%' }}>Category</th>
+                <th style={{ padding: '14px 18px', width: '15%' }}>Channel</th>
+                <th style={{ padding: '14px 18px', textAlign: 'right', width: '11%' }}>Quantity Sold</th>
+                <th style={{ padding: '14px 18px', textAlign: 'right', width: '11%' }}>Avg Unit Price</th>
+                <th style={{ padding: '14px 18px', textAlign: 'right', width: '12%' }}>Total Sales (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productSalesLoading ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: '50px', textAlign: 'center' }}>
+                    <div className="spinner" style={{ margin: '0 auto 12px' }} />
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Aggregating product sales data...</span>
+                  </td>
+                </tr>
+              ) : filteredProductSales.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: '50px', textAlign: 'center' }}>
+                    <Package size={36} color="rgba(255,255,255,0.15)" style={{ margin: '0 auto 10px' }} />
+                    <div style={{ color: 'white', fontWeight: '700', fontSize: '14px' }}>No Product Sales Found</div>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: '4px 0 0' }}>
+                      No items were sold matching the current date range and filters.
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                paginatedProductSales.map((item, idx) => {
+                  const badgeStyle = getCategoryBadgeStyle(item.category);
+                  return (
+                    <tr 
+                      key={`${item.date}_${item.productName}_${idx}`} 
+                      style={{ 
+                        borderTop: '1px solid rgba(255,255,255,0.04)',
+                        transition: 'background 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      {/* Date */}
+                      <td style={{ padding: '14px 18px', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: '700', fontSize: '13px', color: 'white' }}>
+                          {formatDayDate(item.date)}
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {item.date}
+                        </div>
+                      </td>
+
+                      {/* Product Name */}
+                      <td style={{ padding: '14px 18px' }}>
+                        <div style={{ fontWeight: '800', fontSize: '14px', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            width: '8px', height: '8px', borderRadius: '50%',
+                            background: badgeStyle.color,
+                            display: 'inline-block', flexShrink: 0
+                          }} />
+                          <span>{item.productName}</span>
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          In {item.orderCount} {item.orderCount === 1 ? 'order' : 'orders'} on this day
+                        </div>
+                      </td>
+
+                      {/* Category */}
+                      <td style={{ padding: '14px 18px' }}>
+                        <span style={{
+                          padding: '3px 9px',
+                          borderRadius: '6px',
+                          fontSize: '10px',
+                          fontWeight: '800',
+                          letterSpacing: '0.4px',
+                          background: badgeStyle.bg,
+                          color: badgeStyle.color,
+                          border: `1px solid ${badgeStyle.border}`,
+                          display: 'inline-block'
+                        }}>
+                          {item.category}
+                        </span>
+                      </td>
+
+                      {/* Channel Badge */}
+                      <td style={{ padding: '14px 18px' }}>
+                        {productChannelFilter === 'POS' ? (
+                          <span style={{
+                            padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '800',
+                            background: 'rgba(255, 179, 106, 0.12)', color: '#FFB36A',
+                            border: '1px solid rgba(255, 179, 106, 0.25)', display: 'inline-flex', alignItems: 'center', gap: '4px'
+                          }}>
+                            🖥️ POS Counter
+                          </span>
+                        ) : productChannelFilter === 'ONLINE' ? (
+                          <span style={{
+                            padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '800',
+                            background: 'rgba(0, 210, 255, 0.12)', color: '#00D2FF',
+                            border: '1px solid rgba(0, 210, 255, 0.25)', display: 'inline-flex', alignItems: 'center', gap: '4px'
+                          }}>
+                            📱 Online App
+                          </span>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            {item.posQty > 0 && item.onlineQty > 0 ? (
+                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: '800', background: 'rgba(0, 210, 255, 0.12)', color: '#00D2FF' }}>
+                                  📱 {item.onlineQty}
+                                </span>
+                                <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: '800', background: 'rgba(255, 179, 106, 0.12)', color: '#FFB36A' }}>
+                                  🖥️ {item.posQty}
+                                </span>
+                              </div>
+                            ) : item.onlineQty > 0 ? (
+                              <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: 'rgba(0, 210, 255, 0.12)', color: '#00D2FF', width: 'fit-content' }}>
+                                📱 Online App
+                              </span>
+                            ) : (
+                              <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: 'rgba(255, 179, 106, 0.12)', color: '#FFB36A', width: 'fit-content' }}>
+                                🖥️ Counter
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Quantity Sold */}
+                      <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '3px 10px',
+                          borderRadius: '8px',
+                          background: 'rgba(0, 210, 255, 0.08)',
+                          border: '1px solid rgba(0, 210, 255, 0.2)',
+                          color: 'var(--secondary-glow)',
+                          fontWeight: '800',
+                          fontSize: '13px'
+                        }}>
+                          {item.quantity} pcs
+                        </span>
+                      </td>
+
+                      {/* Unit Price */}
+                      <td style={{ padding: '14px 18px', textAlign: 'right', fontSize: '13px', fontWeight: '700', color: 'var(--text-muted)' }}>
+                        ₹{item.unitPrice.toLocaleString()}
+                      </td>
+
+                      {/* Total Sales */}
+                      <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                        <div style={{ fontWeight: '900', fontSize: '15px', color: '#4ade80' }}>
+                          ₹{item.revenue.toLocaleString()}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile Product Cards View */}
+        <div className="analytics-mobile-cards" style={{ flexDirection: 'column', gap: '10px', padding: '12px' }}>
+          {productSalesLoading ? (
+            <div style={{ padding: '40px', textAlign: 'center' }}>
+              <div className="spinner" style={{ margin: '0 auto 10px' }} />
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Loading product sales...</div>
+            </div>
+          ) : filteredProductSales.length === 0 ? (
+            <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+              No product sales found for this filter.
+            </div>
+          ) : (
+            paginatedProductSales.map((item, idx) => {
+              const badgeStyle = getCategoryBadgeStyle(item.category);
+              return (
+                <div 
+                  key={`mob_${item.date}_${item.productName}_${idx}`}
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '14px',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                    <div>
+                      <div style={{ fontWeight: '800', fontSize: '14px', color: 'white' }}>
+                        {item.productName}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        📅 {formatDayDate(item.date)}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '5px',
+                        fontSize: '10px',
+                        fontWeight: '800',
+                        background: badgeStyle.bg,
+                        color: badgeStyle.color,
+                        border: `1px solid ${badgeStyle.border}`,
+                        flexShrink: 0
+                      }}>
+                        {item.category}
+                      </span>
+                      <span style={{
+                        padding: '2px 7px',
+                        borderRadius: '5px',
+                        fontSize: '10px',
+                        fontWeight: '800',
+                        background: (productChannelFilter === 'ONLINE' || (productChannelFilter === 'ALL' && item.onlineQty > 0 && !item.posQty)) 
+                          ? 'rgba(0, 210, 255, 0.12)' 
+                          : 'rgba(255, 179, 106, 0.12)',
+                        color: (productChannelFilter === 'ONLINE' || (productChannelFilter === 'ALL' && item.onlineQty > 0 && !item.posQty))
+                          ? '#00D2FF'
+                          : '#FFB36A',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        flexShrink: 0
+                      }}>
+                        {productChannelFilter === 'ONLINE' ? '📱 App' : productChannelFilter === 'POS' ? '🖥️ Counter' : (item.onlineQty > 0 && item.posQty > 0 ? `📱${item.onlineQty} · 🖥️${item.posQty}` : (item.onlineQty > 0 ? '📱 App' : '🖥️ Counter'))}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(3, 1fr)', 
+                    gap: '6px', 
+                    paddingTop: '8px', 
+                    borderTop: '1px solid rgba(255,255,255,0.04)' 
+                  }}>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: '8px' }}>
+                      <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Quantity</div>
+                      <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--secondary-glow)', marginTop: '1px' }}>{item.quantity} pcs</div>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: '8px' }}>
+                      <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Unit Price</div>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: 'white', marginTop: '1px' }}>₹{item.unitPrice}</div>
+                    </div>
+                    <div style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', padding: '6px 8px', borderRadius: '8px' }}>
+                      <div style={{ fontSize: '9px', color: '#4ade80', textTransform: 'uppercase', fontWeight: '700' }}>Total Sales</div>
+                      <div style={{ fontSize: '13px', fontWeight: '900', color: '#4ade80', marginTop: '1px' }}>₹{item.revenue.toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Pagination Bar */}
+        {filteredProductSales.length > 0 && (
+          <div style={{
+            padding: '12px 18px',
+            borderTop: '1px solid rgba(255,255,255,0.05)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '10px',
+            background: 'rgba(255,255,255,0.015)'
+          }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              Showing <span style={{ color: 'white', fontWeight: '700' }}>{(productPage - 1) * productPageSize + 1}</span> to <span style={{ color: 'white', fontWeight: '700' }}>{Math.min(productPage * productPageSize, filteredProductSales.length)}</span> of <span style={{ color: 'white', fontWeight: '700' }}>{filteredProductSales.length}</span> records
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                onClick={() => setProductPage(prev => Math.max(1, prev - 1))}
+                disabled={productPage === 1}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: productPage === 1 ? 'rgba(255,255,255,0.25)' : 'white',
+                  cursor: productPage === 1 ? 'not-allowed' : 'pointer',
+                  fontSize: '11px',
+                  fontWeight: '700'
+                }}
+              >
+                <ChevronLeft size={14} />
+                <span>Prev</span>
+              </button>
+
+              <span style={{ fontSize: '11px', color: 'white', padding: '0 8px', fontWeight: '800' }}>
+                Page {productPage} of {totalProductPages}
+              </span>
+
+              <button
+                onClick={() => setProductPage(prev => Math.min(totalProductPages, prev + 1))}
+                disabled={productPage >= totalProductPages}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: productPage >= totalProductPages ? 'rgba(255,255,255,0.25)' : 'white',
+                  cursor: productPage >= totalProductPages ? 'not-allowed' : 'pointer',
+                  fontSize: '11px',
+                  fontWeight: '700'
+                }}
+              >
+                <span>Next</span>
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
 
     </div>

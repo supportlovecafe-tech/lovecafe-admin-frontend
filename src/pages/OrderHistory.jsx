@@ -1,6 +1,9 @@
 import {  useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { ShoppingBag, Search, Calendar, ChevronLeft, ChevronRight, Clock, Download, X, ListFilter, Phone, Trash2 } from 'lucide-react';
+import { getCinemaCycleStart, getCinemaCycleEnd } from '../lib/cinemaDate';
+import { getPaymentDisplayInfo } from '../lib/paymentUtils';
+import { applyOrderSearch } from '../lib/orderSearch';
 
 export default function OrderHistory({ user }) {
   const isOutletAdmin = Boolean(user && (user.role === 'OUTLET_MANAGER' || user.role === 'SUPER_ADMIN'));
@@ -8,6 +11,7 @@ export default function OrderHistory({ user }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [screenFilter, setScreenFilter] = useState('ALL');
   const [outletFilter, setOutletFilter] = useState('ALL');
@@ -20,9 +24,21 @@ export default function OrderHistory({ user }) {
 
   const [cinemaName, setCinemaName] = useState(user.cinema_name || '');
 
+  // Debounce search input for instant, non-blocking response
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 450);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch]);
+
   useEffect(() => {
     fetchOrders();
-  }, [page, statusFilter, screenFilter, outletFilter, startDate, endDate]);
+  }, [page, statusFilter, screenFilter, outletFilter, startDate, endDate, debouncedSearch]);
 
   useEffect(() => {
     if (isSuperAdmin) {
@@ -44,51 +60,54 @@ export default function OrderHistory({ user }) {
 
   const fetchOrders = async () => {
     setLoading(true);
-    let query = supabase.from('orders').select('*, profiles:staff_id(full_name, employee_code, role)', { count: 'exact' });
-    
-    if (user.cinema_id && user.cinema_id !== 'default') {
-        query = query.eq('cinema_id', user.cinema_id);
-    } else if (isSuperAdmin && outletFilter !== 'ALL') {
-        query = query.eq('cinema_id', outletFilter);
+    try {
+      let query = supabase.from('orders').select('*', { count: 'exact' });
+      
+      if (user.cinema_id && user.cinema_id !== 'default') {
+          query = query.eq('cinema_id', user.cinema_id);
+      } else if (isSuperAdmin && outletFilter !== 'ALL') {
+          query = query.eq('cinema_id', outletFilter);
+      }
+
+      if (statusFilter !== 'ALL') {
+          query = query.eq('status', statusFilter);
+      }
+
+      if (screenFilter !== 'ALL') {
+          // Strictly filter using the JSONB column for 100% accuracy
+          query = query.eq('metadata->>screen_name', screenFilter);
+      }
+
+      // 4:00 AM to 03:59:59 AM Cinema 24-hr operational cycle
+      if (startDate) {
+          const startTime = getCinemaCycleStart(startDate);
+          if (startTime) query = query.gte('timestamp', startTime);
+      }
+
+      if (endDate) {
+          const endTime = getCinemaCycleEnd(endDate);
+          if (endTime) query = query.lte('timestamp', endTime);
+      }
+
+      const termToUse = debouncedSearch || searchTerm;
+      if (termToUse && termToUse.trim()) {
+          query = applyOrderSearch(query, termToUse.trim());
+      }
+      
+      const { data, error } = await query
+          .order('timestamp', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (error) {
+          console.error('Error fetching orders:', error);
+      } else if (data) {
+          setOrders(data);
+      }
+    } catch (err) {
+      console.error('Unexpected error fetching orders:', err);
+    } finally {
+      setLoading(false);
     }
-
-    if (statusFilter !== 'ALL') {
-        query = query.eq('status', statusFilter);
-    }
-
-    if (screenFilter !== 'ALL') {
-        // Since we backfilled metadata, we can strictly filter using the JSONB column for 100% accuracy
-        query = query.eq('metadata->>screen_name', screenFilter);
-    }
-
-    // Convert YYYY-MM-DD to IST bounds for queries
-    const getISTStart = (dateStr) => {
-      if (!dateStr) return null;
-      return new Date(new Date(dateStr).getTime() - 19800000).toISOString();
-    };
-    const getISTEnd = (dateStr) => {
-      if (!dateStr) return null;
-      return new Date(new Date(dateStr).getTime() + 66599999).toISOString();
-    };
-
-    if (startDate) {
-        query = query.gte('timestamp', getISTStart(startDate));
-    }
-
-    if (endDate) {
-        query = query.lte('timestamp', getISTEnd(endDate));
-    }
-
-    if (searchTerm) {
-        query = query.or(`location.ilike.%${searchTerm}%,display_id.ilike.%${searchTerm}%`);
-    }
-    
-    const { data } = await query
-        .order('timestamp', { ascending: false })
-        .range(page * pageSize, (page + 1) * pageSize - 1);
-
-    if (data) setOrders(data);
-    setLoading(false);
   };
 
   const deleteOrder = async (orderId, displayId) => {
@@ -105,21 +124,31 @@ export default function OrderHistory({ user }) {
   };
 
   const downloadFullTransactionReport = async () => {
-    let query = supabase.from('orders').select('timestamp, display_id, location, total_amount, payment_method, status, items, metadata, collected_cash, return_cash, staff_id, customer_phone, profiles:staff_id(full_name, employee_code, role)');
+    let query = supabase.from('orders').select('timestamp, display_id, location, total_amount, payment_method, status, items, metadata, collected_cash, return_cash, staff_id, customer_phone');
     
     if (user.cinema_id && user.cinema_id !== 'default') {
         query = query.eq('cinema_id', user.cinema_id);
     } else if (isSuperAdmin && outletFilter !== 'ALL') {
         query = query.eq('cinema_id', outletFilter);
     }
-    const getISTStart = (dateStr) => dateStr ? new Date(new Date(dateStr).getTime() - 19800000).toISOString() : null;
-    const getISTEnd = (dateStr) => dateStr ? new Date(new Date(dateStr).getTime() + 66599999).toISOString() : null;
-
-    if (startDate) query = query.gte('timestamp', getISTStart(startDate));
-    if (endDate) query = query.lte('timestamp', getISTEnd(endDate));
+    // 4:00 AM to 03:59:59 AM Cinema 24-hr operational cycle
+    if (startDate) {
+        const startTime = getCinemaCycleStart(startDate);
+        if (startTime) query = query.gte('timestamp', startTime);
+    }
+    if (endDate) {
+        const endTime = getCinemaCycleEnd(endDate);
+        if (endTime) query = query.lte('timestamp', endTime);
+    }
     if (statusFilter !== 'ALL') query = query.eq('status', statusFilter);
+    if (screenFilter !== 'ALL') query = query.eq('metadata->>screen_name', screenFilter);
 
-    const { data, error } = await query.order('timestamp', { ascending: false });
+    const termToUse = debouncedSearch || searchTerm;
+    if (termToUse && termToUse.trim()) {
+        query = applyOrderSearch(query, termToUse.trim());
+    }
+
+    const { data, error } = await query.order('timestamp', { ascending: false }).limit(10000);
 
     if (error) { alert('Error generating report'); return; }
     if (!data || data.length === 0) { alert('No records found for the selected range'); return; }
@@ -379,12 +408,51 @@ export default function OrderHistory({ user }) {
             <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               className="input-premium"
-              placeholder="Search by seat or order ID..."
+              placeholder="Search Order ID, Seat, Phone, Employee ID/Name, Product..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && fetchOrders()}
-              style={{ paddingLeft: '42px', width: '100%', boxSizing: 'border-box' }}
+              onChange={e => {
+                setSearchTerm(e.target.value);
+                if (e.target.value === '' && searchTerm !== '') {
+                  setDebouncedSearch('');
+                  setPage(0);
+                }
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  setPage(0);
+                  setDebouncedSearch(searchTerm);
+                  fetchOrders();
+                }
+              }}
+              style={{ paddingLeft: '42px', paddingRight: searchTerm ? '38px' : '14px', width: '100%', boxSizing: 'border-box' }}
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  setDebouncedSearch('');
+                  setPage(0);
+                }}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title="Clear search"
+              >
+                <X size={15} />
+              </button>
+            )}
           </div>
           <div className="oh-status-wrap">
             <select
@@ -447,7 +515,15 @@ export default function OrderHistory({ user }) {
               </button>
             )}
           </div>
-          <button onClick={fetchOrders} className="btn-lucrative oh-apply-btn" style={{ padding: '0 20px', height: '44px' }}>
+          <button 
+            onClick={() => {
+              setPage(0);
+              setDebouncedSearch(searchTerm);
+              fetchOrders();
+            }} 
+            className="btn-lucrative oh-apply-btn" 
+            style={{ padding: '0 20px', height: '44px' }}
+          >
             <ListFilter size={16} /> Apply
           </button>
         </div>
@@ -504,6 +580,7 @@ export default function OrderHistory({ user }) {
 
                 const deliveredCode = order.metadata?.delivered_by_code || (order.delivered_by ? 'EMP-' + order.delivered_by.substring(0,6).toUpperCase() : null);
                 const deliveredName = order.metadata?.delivered_by_name || null;
+                const pInfo = getPaymentDisplayInfo(order);
 
                 return (
                   <tr key={order.id}>
@@ -528,8 +605,8 @@ export default function OrderHistory({ user }) {
                       </div>
                     </td>
                     <td>
-                      <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--accent-gold)' }}>
-                        {order.payment_method === 'POS_SPLIT' ? 'SPLIT (CASH + UPI)' : order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
+                      <span className="badge" style={{ background: pInfo.bg, color: pInfo.color, border: pInfo.border, fontWeight: 700 }}>
+                        {pInfo.label}
                       </span>
                       {order.payment_method === 'POS_SPLIT' && order.metadata && (
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -687,6 +764,7 @@ export default function OrderHistory({ user }) {
 
             const showCashInfo = isCashOrder && (collectedAmt > 0 || returnedAmt > 0);
             const cashDifference = collectedAmt - returnedAmt;
+            const pInfo = getPaymentDisplayInfo(order);
 
             return (
               <div key={order.id} className="oh-order-card" style={{ borderLeft: `3px solid ${sc}` }}>
@@ -756,8 +834,8 @@ export default function OrderHistory({ user }) {
 
                 <div className="oh-card-footer">
                   <div className="oh-card-meta">
-                    <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--accent-gold)' }}>
-                      {order.payment_method === 'POS_SPLIT' ? 'SPLIT (CASH + UPI)' : order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
+                    <span className="badge" style={{ background: pInfo.bg, color: pInfo.color, border: pInfo.border, fontWeight: 700 }}>
+                      {pInfo.label}
                     </span>
                     <span className="badge" style={{ background: `${sc}15`, color: sc, border: `1px solid ${sc}30` }}>
                       {order.status}

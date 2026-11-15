@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { getCinemaCycleStart, getCinemaCycleEnd, getISTNow, toDateStr } from '../lib/cinemaDate';
 import { 
   Users, Award, TrendingUp, DollarSign, Calendar, Filter, 
   Download, Search, RefreshCw, ChevronRight, Building, CheckCircle2,
@@ -14,11 +15,6 @@ export default function StaffBonusDashboard({ user }) {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Date range filter
-  const getISTNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  const toDateStr = (d) => {
-    const pad = (n) => n < 10 ? '0' + n : n;
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  };
 
   const todayStr = toDateStr(getISTNow());
   const firstOfMonth = toDateStr(new Date(getISTNow().getFullYear(), getISTNow().getMonth(), 1));
@@ -78,8 +74,8 @@ export default function StaffBonusDashboard({ user }) {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const startIso = startDate ? new Date(new Date(startDate).getTime() - 19800000).toISOString() : null;
-      const endIso = endDate ? new Date(new Date(endDate).getTime() + 66599999).toISOString() : null;
+      const startIso = startDate ? getCinemaCycleStart(startDate) : null;
+      const endIso = endDate ? getCinemaCycleEnd(endDate) : null;
 
       const params = {
         p_cinema_id: selectedCinemaId || null,
@@ -111,8 +107,8 @@ export default function StaffBonusDashboard({ user }) {
         .select('id, cinema_id, total_amount, collected_cash, return_cash, timestamp, status, staff_id, metadata, cinemas(id, name), profiles:staff_id(id, full_name, employee_code, role)')
         .neq('status', 'CANCELLED');
 
-      const startIso = startDate ? new Date(new Date(startDate).getTime() - 19800000).toISOString() : null;
-      const endIso = endDate ? new Date(new Date(endDate).getTime() + 66599999).toISOString() : null;
+      const startIso = startDate ? getCinemaCycleStart(startDate) : null;
+      const endIso = endDate ? getCinemaCycleEnd(endDate) : null;
 
       if (selectedCinemaId) q = q.eq('cinema_id', selectedCinemaId);
       if (startIso) q = q.gte('timestamp', startIso);

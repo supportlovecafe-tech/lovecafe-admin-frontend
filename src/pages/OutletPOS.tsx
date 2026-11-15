@@ -4,7 +4,7 @@ import { API_BASE_URL } from '../lib/config';
 import { 
   ShoppingCart, Plus, Minus, Trash2, Printer, CheckCircle, Store, 
   Loader2, RefreshCcw, Smartphone, CreditCard, Banknote, Split, X, Search, 
-  ArrowRight, Tv, Armchair, Phone 
+  ArrowRight, Tv, Armchair, Phone, Clock, Truck, AlertCircle
 } from 'lucide-react';
 
 export default function OutletPOS({ user }: { user: any }) {
@@ -42,6 +42,7 @@ export default function OutletPOS({ user }: { user: any }) {
   const [receiptTab, setReceiptTab] = useState<'customer' | 'kitchen'>('customer');
   const [outbox, setOutbox] = useState<any[]>([]);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [convertingToPod, setConvertingToPod] = useState(false);
   
   // Validation State
   const [breakdown, setBreakdown] = useState<any>({
@@ -136,25 +137,47 @@ export default function OutletPOS({ user }: { user: any }) {
         addonAssignQuery = addonAssignQuery.or(`cinema_id.eq.${cinemaId},cinema_id.is.null`);
     }
 
+    const overridesQuery = cinemaId
+      ? supabase.from('outlet_item_availability').select('item_id, item_type, is_available').eq('cinema_id', cinemaId)
+      : Promise.resolve({ data: [] });
+
     try {
-        const [{ data: foodData }, { data: comboData }, { data: groupsData }, { data: assignsData }] = await Promise.all([
+        const [{ data: foodData }, { data: comboData }, { data: groupsData }, { data: assignsData }, { data: overridesData }] = await Promise.all([
           foodQuery, 
           comboQuery,
           addonGroupQuery,
-          addonAssignQuery
+          addonAssignQuery,
+          overridesQuery
         ]);
 
         if (groupsData) setAddonGroups(groupsData);
         if (assignsData) setAddonAssignments(assignsData);
+
+        const overrideMap = new Map<string, boolean>();
+        (overridesData || []).forEach((row: any) => {
+          overrideMap.set(`${row.item_type}:${row.item_id}`, row.is_available);
+        });
+
+        const filteredFood = (foodData || []).filter((item: any) => {
+          const key = `FOOD:${item.id}`;
+          if (overrideMap.has(key)) return overrideMap.get(key) === true;
+          return item.is_available === true;
+        });
+
+        const filteredCombos = (comboData || []).filter((combo: any) => {
+          const key = `COMBO:${combo.id}`;
+          if (overrideMap.has(key)) return overrideMap.get(key) === true;
+          return combo.is_available === true;
+        });
         
         if (foodData) {
-            const mappedCombos = (comboData || []).map(c => ({
+            const mappedCombos = filteredCombos.map(c => ({
                 ...c,
                 is_combo: true,
                 category: '🔥 Combos'
             }));
             
-            const allItems = [...mappedCombos, ...foodData];
+            const allItems = [...mappedCombos, ...filteredFood];
             setFoods(allItems);
             localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(allItems));
             
@@ -327,8 +350,9 @@ export default function OutletPOS({ user }: { user: any }) {
 
     // Immediate local optimistic breakdown so UI updates instantly with addons
     const st = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const cgst = Math.round(st * 0.025 * 100) / 100;
-    const sgst = Math.round(st * 0.025 * 100) / 100;
+    const taxableSt = cart.reduce((sum, item) => sum + (item.apply_gst !== false ? (item.price * item.quantity) : 0), 0);
+    const cgst = Math.round(taxableSt * 0.025 * 100) / 100;
+    const sgst = Math.round(taxableSt * 0.025 * 100) / 100;
     setBreakdown((prev: any) => ({
         ...prev,
         subtotal: st,
@@ -593,12 +617,17 @@ export default function OutletPOS({ user }: { user: any }) {
         }));
 
         const isSplit = paymentMode === 'Split';
-        const actualCollectedCash = isSplit
-            ? (splitCollectedCash ? (parseFloat(splitCollectedCash) || 0) : numSplitCash)
-            : (paymentMode === 'Cash' ? (collectedCash ? (Number(collectedCash) || 0) : total) : 0);
-        const actualReturnCash = isSplit
-            ? Math.max(0, actualCollectedCash - numSplitCash)
-            : (paymentMode === 'Cash' ? Math.max(0, actualCollectedCash - total) : 0);
+        const isPod = paymentMode === 'Pay on Delivery';
+        const actualCollectedCash = isPod
+            ? 0
+            : (isSplit
+                ? (splitCollectedCash ? (parseFloat(splitCollectedCash) || 0) : numSplitCash)
+                : (paymentMode === 'Cash' ? (collectedCash ? (Number(collectedCash) || 0) : total) : 0));
+        const actualReturnCash = isPod
+            ? 0
+            : (isSplit
+                ? Math.max(0, actualCollectedCash - numSplitCash)
+                : (paymentMode === 'Cash' ? Math.max(0, actualCollectedCash - total) : 0));
 
         const orderData = {
             cinema_id: cinemaId,
@@ -612,8 +641,8 @@ export default function OutletPOS({ user }: { user: any }) {
             customer_phone: customerPhone,
             outlet_customer_id: outletCustomerId,
             status: 'PENDING',
-            payment_status: 'PAID',
-            payment_method: isSplit ? 'POS_SPLIT' : (paymentMode === 'Cash' ? 'POS_CASH' : paymentMode.toUpperCase()),
+            payment_status: isPod ? 'PENDING' : 'PAID',
+            payment_method: isPod ? 'PAY_ON_DELIVERY' : (isSplit ? 'POS_SPLIT' : (paymentMode === 'Cash' ? 'POS_CASH' : paymentMode.toUpperCase())),
             timestamp: new Date().toISOString(),
             is_demo_order: false,
             is_pos: true,
@@ -631,6 +660,7 @@ export default function OutletPOS({ user }: { user: any }) {
                 seat_number: seatNumber,
                 collected_cash: actualCollectedCash,
                 return_cash: actualReturnCash,
+                ...(isPod ? { pay_on_delivery: true } : {}),
                 ...(isSplit ? {
                     split_payment: true,
                     split_cash: numSplitCash,
@@ -767,6 +797,69 @@ export default function OutletPOS({ user }: { user: any }) {
     setSplitCash('');
     setSplitUpi('');
     setSplitCollectedCash('');
+  };
+
+  const handleConvertToPOD = async () => {
+    if (!lastOrder) return;
+    const confirmSwitch = window.confirm(
+      `Payment failed or customer wants Pay on Delivery?\n\nSwitch Order #${lastOrder.display_id} to PAY ON DELIVERY?\n\n• Payment status: PENDING (Unpaid)\n• Payment method: PAY_ON_DELIVERY\n• Amount to collect at seat: ₹${Number(lastOrder.total_amount).toFixed(2)}`
+    );
+    if (!confirmSwitch) return;
+
+    setConvertingToPod(true);
+    try {
+      const updatePayload = {
+        payment_method: 'PAY_ON_DELIVERY',
+        payment_status: 'PENDING',
+        collected_cash: 0,
+        return_cash: 0,
+        metadata: {
+          ...(lastOrder.metadata || {}),
+          converted_to_pod: true,
+          converted_to_pod_at: new Date().toISOString(),
+          previous_payment_method: lastOrder.payment_method
+        }
+      };
+
+      let success = false;
+      if (lastOrder.id && typeof lastOrder.id === 'string' && !lastOrder.id.startsWith('OFFLINE_')) {
+        const { error } = await supabase
+          .from('orders')
+          .update(updatePayload)
+          .eq('id', lastOrder.id);
+        if (!error) success = true;
+      }
+
+      if (!success) {
+        const { error: fallbackError } = await supabase
+          .from('orders')
+          .update(updatePayload)
+          .eq('display_id', lastOrder.display_id)
+          .eq('cinema_id', lastOrder.cinema_id || user?.cinema_id);
+        if (fallbackError) throw fallbackError;
+      }
+
+      setLastOrder((prev: any) => ({
+        ...prev,
+        payment_method: 'PAY_ON_DELIVERY',
+        payment_status: 'PENDING',
+        collected_cash: 0,
+        return_cash: 0,
+        metadata: {
+          ...(prev?.metadata || {}),
+          converted_to_pod: true,
+          converted_to_pod_at: new Date().toISOString(),
+          previous_payment_method: prev?.payment_method
+        }
+      }));
+
+      alert(`✓ Order #${lastOrder.display_id} switched to PAY ON DELIVERY!\nStatus marked as PENDING (Unpaid). Collect ₹${Number(lastOrder.total_amount).toFixed(2)} upon delivery.`);
+    } catch (err: any) {
+      console.error("Failed to convert to POD:", err);
+      alert("Failed to switch order to Pay on Delivery: " + (err.message || 'Unknown error'));
+    } finally {
+      setConvertingToPod(false);
+    }
   };
 
 
@@ -1004,17 +1097,32 @@ export default function OutletPOS({ user }: { user: any }) {
                         <div key={itemKey} style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', padding: '12px', borderRadius: '12px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ flex: 1 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                         {item.is_combo && <span style={{ fontSize: '9px', background: 'linear-gradient(90deg,#FF6B35,#FF2D55)', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>COMBO</span>}
                                         <div style={{ fontWeight: 'bold', fontSize: '15px' }}>{item.name}</div>
+                                        {item.apply_gst === false && (
+                                            <span style={{ fontSize: '9px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                                                0% GST
+                                            </span>
+                                        )}
                                     </div>
-                                    <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>₹{item.price} x {item.quantity}</div>
+                                    {item.addons && item.addons.length > 0 && item.base_price !== undefined ? (
+                                        <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
+                                            <span>Base ₹{item.base_price}</span>
+                                            <span style={{ color: 'var(--accent-gold)', fontWeight: 600 }}> + Addons = ₹{item.price}</span>
+                                            <span> × {item.quantity} = <strong style={{ color: 'white' }}>₹{(item.price * item.quantity).toFixed(2)}</strong></span>
+                                        </div>
+                                    ) : (
+                                        <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
+                                            ₹{item.price} × {item.quantity} = <strong style={{ color: 'white' }}>₹{(item.price * item.quantity).toFixed(2)}</strong>
+                                        </div>
+                                    )}
                                     {item.addons && item.addons.length > 0 && (
                                         <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                            {item.addons.flatMap((a: any) => a.selectedOptions).map((opt: any, idx: number) => (
+                                            {item.addons.flatMap((a: any) => (a.selectedOptions || a.options || [])).filter(Boolean).map((opt: any, idx: number) => (
                                                 <div key={idx} style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', display: 'flex', justifyContent: 'space-between' }}>
                                                     <span>+ {opt.name}</span>
-                                                    {opt.price > 0 && <span style={{ color: 'var(--accent-gold)' }}>+₹{opt.price}</span>}
+                                                    {opt.price > 0 && <span style={{ color: 'var(--accent-gold)' }}>+₹{opt.price} (included)</span>}
                                                 </div>
                                             ))}
                                         </div>
@@ -1140,12 +1248,13 @@ export default function OutletPOS({ user }: { user: any }) {
 
                         <div>
                             <label className="pos-label">Payment Mode</label>
-                            <div style={{ display: 'flex', gap: '6px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))', gap: '6px' }}>
                                 {[
                                     { id: 'Cash', label: 'Cash', icon: Banknote },
                                     { id: 'Online', label: 'UPI / Online', icon: Smartphone },
                                     { id: 'Card', label: 'Card', icon: CreditCard },
-                                    { id: 'Split', label: 'Split', icon: Split }
+                                    { id: 'Split', label: 'Split', icon: Split },
+                                    { id: 'Pay on Delivery', label: 'Pay on Del.', icon: Truck }
                                 ].map(({ id, label, icon: Icon }) => (
                                     <button
                                         key={id}
@@ -1159,24 +1268,52 @@ export default function OutletPOS({ user }: { user: any }) {
                                             }
                                         }}
                                         style={{
-                                            flex: 1, padding: '11px 6px', borderRadius: '12px', fontSize: '12px', fontWeight: 800,
-                                            background: paymentMode === id ? 'linear-gradient(135deg, var(--primary-glow) 0%, #ff5252 100%)' : 'rgba(255,255,255,0.06)',
+                                            padding: '10px 4px', borderRadius: '12px', fontSize: '11px', fontWeight: 800,
+                                            background: paymentMode === id 
+                                                ? (id === 'Pay on Delivery' ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : 'linear-gradient(135deg, var(--primary-glow) 0%, #ff5252 100%)') 
+                                                : 'rgba(255,255,255,0.06)',
                                             color: paymentMode === id ? 'white' : 'var(--text-muted)',
-                                            border: paymentMode === id ? '1px solid rgba(255,47,146,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                                            border: paymentMode === id 
+                                                ? (id === 'Pay on Delivery' ? '1px solid rgba(245, 158, 11, 0.6)' : '1px solid rgba(255,47,146,0.5)') 
+                                                : '1px solid rgba(255,255,255,0.1)',
                                             cursor: 'pointer',
                                             transition: 'all 0.15s ease',
                                             display: 'flex',
+                                            flexDirection: 'column',
                                             alignItems: 'center',
                                             justifyContent: 'center',
-                                            gap: '5px'
+                                            gap: '4px',
+                                            minWidth: 0
                                         }}
                                     >
-                                        <Icon size={14} />
-                                        <span>{label}</span>
+                                        <Icon size={15} />
+                                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{label}</span>
                                     </button>
                                 ))}
                             </div>
                         </div>
+
+                        {paymentMode === 'Pay on Delivery' && (
+                            <div style={{ 
+                                background: 'rgba(245, 158, 11, 0.08)', 
+                                padding: '14px', 
+                                borderRadius: '14px', 
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px'
+                            }}>
+                                <Clock size={22} color="#f59e0b" style={{ flexShrink: 0 }} />
+                                <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase' }}>
+                                        Pay on Delivery • Unpaid
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                        Order status will be set to PENDING. Runner collects ₹{total.toFixed(2)} at the seat upon delivery.
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {paymentMode === 'Cash' && (
                             <div style={{ background: 'rgba(255,255,255,0.04)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -1646,7 +1783,7 @@ export default function OutletPOS({ user }: { user: any }) {
                     </div>
 
                     {/* Action Bar (Print & New Order) */}
-                    <div className="pos-billing-actions-row no-print">
+                    <div className="pos-billing-actions-row no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                         {/* Tab Switcher */}
                         <div className="pos-receipt-tabs">
                             <button 
@@ -1666,7 +1803,48 @@ export default function OutletPOS({ user }: { user: any }) {
                         </div>
 
                         {/* Fast Action Buttons */}
-                        <div className="pos-billing-btn-group">
+                        <div className="pos-billing-btn-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            {lastOrder.payment_method !== 'PAY_ON_DELIVERY' ? (
+                                <button 
+                                    type="button"
+                                    onClick={handleConvertToPOD} 
+                                    disabled={convertingToPod}
+                                    title="Payment failed after billing? Switch this order to Pay on Delivery"
+                                    style={{
+                                        background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                        color: '#fff',
+                                        border: 'none',
+                                        padding: '7px 12px',
+                                        borderRadius: '8px',
+                                        fontSize: '12px',
+                                        fontWeight: 800,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        cursor: convertingToPod ? 'not-allowed' : 'pointer',
+                                        boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)'
+                                    }}
+                                >
+                                    {convertingToPod ? <Loader2 size={14} className="animate-spin" /> : <Clock size={14} />}
+                                    <span>{convertingToPod ? 'Switching...' : '⚡ Pay on Delivery'}</span>
+                                </button>
+                            ) : (
+                                <div style={{
+                                    background: 'rgba(239, 68, 68, 0.15)',
+                                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                                    color: '#f87171',
+                                    padding: '6px 10px',
+                                    borderRadius: '8px',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '5px'
+                                }}>
+                                    <Clock size={12} />
+                                    <span>POD (COLLECT ₹{Number(lastOrder.total_amount).toFixed(2)})</span>
+                                </div>
+                            )}
                             <button onClick={handlePrint} className="pos-billing-btn-print">
                                 <Printer size={16} /> Print Bill
                             </button>
@@ -1740,7 +1918,7 @@ export default function OutletPOS({ user }: { user: any }) {
                                                         )}
                                                         {item.addons && item.addons.length > 0 && (
                                                             <div style={{ fontSize: '10px', color: '#444', marginTop: '2px' }}>
-                                                                {item.addons.flatMap((a: any) => a.selectedOptions).map((opt: any, i: number) => (
+                                                                {item.addons.flatMap((a: any) => (a.selectedOptions || a.options || [])).filter(Boolean).map((opt: any, i: number) => (
                                                                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '6px' }}>
                                                                         <span>+ {opt.name}</span>
                                                                         {opt.price > 0 && <span>₹{opt.price}</span>}
@@ -1791,50 +1969,66 @@ export default function OutletPOS({ user }: { user: any }) {
 
                                     {/* Payment Info */}
                                     <div style={{ fontSize: '12px', marginTop: '6px', paddingTop: '4px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                                            <span>Payment Mode</span>
-                                            <span style={{ fontWeight: 800 }}>
-                                                {lastOrder.payment_method === 'POS_CASH' 
-                                                    ? 'CASH' 
-                                                    : (lastOrder.payment_method === 'POS_SPLIT' ? 'SPLIT (CASH + UPI)' : lastOrder.payment_method)}
-                                            </span>
-                                        </div>
-
-                                        {lastOrder.payment_method === 'POS_SPLIT' && (
-                                            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '6px', margin: '6px 0', border: '1px dashed #cbd5e1' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px', fontWeight: 700 }}>
-                                                    <span>💵 Cash (Bill Portion):</span>
-                                                    <span>₹{Number(lastOrder.metadata?.split_cash || 0).toFixed(2)}</span>
+                                        {lastOrder.payment_method === 'PAY_ON_DELIVERY' || lastOrder.payment_status === 'PENDING' ? (
+                                            <div style={{ background: '#fef2f2', border: '1.5px solid #dc2626', borderRadius: '6px', padding: '8px', margin: '6px 0', textAlign: 'center' }}>
+                                                <div style={{ fontSize: '11px', fontWeight: 900, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                    ⚠️ PAY ON DELIVERY (UNPAID)
                                                 </div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
-                                                    <span>📱 UPI Paid:</span>
-                                                    <span>₹{Number(lastOrder.metadata?.split_upi || 0).toFixed(2)}</span>
+                                                <div style={{ fontSize: '15px', fontWeight: 900, color: '#dc2626', marginTop: '2px' }}>
+                                                    COLLECT AT SEAT: ₹{Number(lastOrder.total_amount).toFixed(2)}
                                                 </div>
-                                                {lastOrder.collected_cash > (lastOrder.metadata?.split_cash || 0) && (
-                                                    <div style={{ borderTop: '1px dashed #cbd5e1', marginTop: '5px', paddingTop: '5px' }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b' }}>
-                                                            <span>Cash Tendered:</span>
-                                                            <span>₹{Number(lastOrder.collected_cash).toFixed(2)}</span>
-                                                        </div>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '12px', color: '#16a34a', marginTop: '2px' }}>
-                                                            <span>Change Returned:</span>
-                                                            <span>₹{Number(lastOrder.return_cash).toFixed(2)}</span>
-                                                        </div>
-                                                    </div>
-                                                )}
+                                                <div style={{ fontSize: '10px', color: '#7f1d1d', marginTop: '2px' }}>
+                                                    Status: PENDING • Collect cash or UPI from customer upon delivery
+                                                </div>
                                             </div>
-                                        )}
-
-                                        {lastOrder.payment_method === 'POS_CASH' && (
+                                        ) : (
                                             <>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                                                    <span>Cash Collected</span>
-                                                    <span>₹{Number(lastOrder.collected_cash || lastOrder.total_amount).toFixed(2)}</span>
+                                                    <span>Payment Mode</span>
+                                                    <span style={{ fontWeight: 800 }}>
+                                                        {lastOrder.payment_method === 'POS_CASH' 
+                                                            ? 'CASH' 
+                                                            : (lastOrder.payment_method === 'POS_SPLIT' ? 'SPLIT (CASH + UPI)' : lastOrder.payment_method)}
+                                                    </span>
                                                 </div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '13px', background: '#f0fdf4', padding: '3px 6px', borderRadius: '4px' }}>
-                                                    <span>Change Returned</span>
-                                                    <span>₹{Number(lastOrder.return_cash || 0).toFixed(2)}</span>
-                                                </div>
+
+                                                {lastOrder.payment_method === 'POS_SPLIT' && (
+                                                    <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '6px', margin: '6px 0', border: '1px dashed #cbd5e1' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px', fontWeight: 700 }}>
+                                                            <span>💵 Cash (Bill Portion):</span>
+                                                            <span>₹{Number(lastOrder.metadata?.split_cash || 0).toFixed(2)}</span>
+                                                        </div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                                                            <span>📱 UPI Paid:</span>
+                                                            <span>₹{Number(lastOrder.metadata?.split_upi || 0).toFixed(2)}</span>
+                                                        </div>
+                                                        {lastOrder.collected_cash > (lastOrder.metadata?.split_cash || 0) && (
+                                                            <div style={{ borderTop: '1px dashed #cbd5e1', marginTop: '5px', paddingTop: '5px' }}>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b' }}>
+                                                                    <span>Cash Tendered:</span>
+                                                                    <span>₹{Number(lastOrder.collected_cash).toFixed(2)}</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '12px', color: '#16a34a', marginTop: '2px' }}>
+                                                                    <span>Change Returned:</span>
+                                                                    <span>₹{Number(lastOrder.return_cash).toFixed(2)}</span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {lastOrder.payment_method === 'POS_CASH' && (
+                                                    <>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                                            <span>Cash Collected</span>
+                                                            <span>₹{Number(lastOrder.collected_cash || lastOrder.total_amount).toFixed(2)}</span>
+                                                        </div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '13px', background: '#f0fdf4', padding: '3px 6px', borderRadius: '4px' }}>
+                                                            <span>Change Returned</span>
+                                                            <span>₹{Number(lastOrder.return_cash || 0).toFixed(2)}</span>
+                                                        </div>
+                                                    </>
+                                                )}
                                             </>
                                         )}
                                     </div>
@@ -1865,6 +2059,17 @@ export default function OutletPOS({ user }: { user: any }) {
                                         <div style={{ fontSize: '14px', fontWeight: 900, marginTop: '4px', background: '#fef08a', padding: '2px 8px', display: 'inline-block' }}>
                                             {lastOrder.location}
                                         </div>
+
+                                        {(lastOrder.payment_method === 'PAY_ON_DELIVERY' || lastOrder.payment_status === 'PENDING') && (
+                                            <div style={{ marginTop: '8px', padding: '6px 8px', background: '#fee2e2', border: '2px solid #dc2626', borderRadius: '6px' }}>
+                                                <div style={{ fontSize: '12px', fontWeight: 900, color: '#991b1b', textTransform: 'uppercase' }}>
+                                                    🚨 COLLECT AT SEAT: ₹{Number(lastOrder.total_amount).toFixed(2)}
+                                                </div>
+                                                <div style={{ fontSize: '10px', fontWeight: 800, color: '#7f1d1d' }}>
+                                                    PAY ON DELIVERY • UNPAID
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Kitchen Items */}
@@ -1885,7 +2090,7 @@ export default function OutletPOS({ user }: { user: any }) {
                                                         )}
                                                         {item.addons && item.addons.length > 0 && (
                                                             <div style={{ fontSize: '12px', marginTop: '2px', paddingLeft: '8px', borderLeft: '2px solid #000' }}>
-                                                                {item.addons.flatMap((a: any) => a.selectedOptions).map((opt: any, i: number) => (
+                                                                {item.addons.flatMap((a: any) => (a.selectedOptions || a.options || [])).filter(Boolean).map((opt: any, i: number) => (
                                                                     <div key={i} style={{ fontWeight: 600 }}>+ {opt.name}</div>
                                                                 ))}
                                                             </div>
@@ -1905,11 +2110,36 @@ export default function OutletPOS({ user }: { user: any }) {
                     </div>
 
                     {/* Bottom Sticky Action Bar */}
-                    <div className="pos-billing-footer no-print">
-                        <button onClick={handlePrint} className="pos-footer-btn-print">
+                    <div className="pos-billing-footer no-print" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        {lastOrder.payment_method !== 'PAY_ON_DELIVERY' && (
+                            <button
+                                type="button"
+                                onClick={handleConvertToPOD}
+                                disabled={convertingToPod}
+                                style={{
+                                    flex: 1,
+                                    background: 'rgba(245, 158, 11, 0.15)',
+                                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                                    color: '#f59e0b',
+                                    padding: '12px 14px',
+                                    borderRadius: '12px',
+                                    fontSize: '13px',
+                                    fontWeight: 800,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px',
+                                    cursor: convertingToPod ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                <Clock size={16} />
+                                <span>{convertingToPod ? 'Switching...' : 'Payment Failed? POD'}</span>
+                            </button>
+                        )}
+                        <button onClick={handlePrint} className="pos-footer-btn-print" style={{ flex: 1 }}>
                             <Printer size={18} /> Print Bill
                         </button>
-                        <button onClick={handleNewOrder} className="pos-footer-btn-next">
+                        <button onClick={handleNewOrder} className="pos-footer-btn-next" style={{ flex: 1 }}>
                             <ArrowRight size={18} /> Next Order
                         </button>
                     </div>
@@ -2056,7 +2286,10 @@ export default function OutletPOS({ user }: { user: any }) {
               </div>
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontSize: '14px', fontWeight: 800, color: 'white', lineHeight: '1.2' }}>
-                  {cart.length} {cart.length === 1 ? 'item' : 'items'} in order
+                  {(() => {
+                    const totalPieces = cart.reduce((s, i) => s + i.quantity, 0);
+                    return `${totalPieces} ${totalPieces === 1 ? 'item' : 'items'} in order`;
+                  })()}
                 </div>
                 <div style={{ fontSize: '13px', color: 'var(--accent-gold)', fontWeight: 800 }}>
                   ₹{total.toFixed(2)}

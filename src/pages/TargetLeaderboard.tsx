@@ -140,6 +140,10 @@ export default function TargetLeaderboard({ user }) {
   const isMet = achievedSales >= targetAmount;
   const remainingTarget = Math.max(0, targetAmount - achievedSales);
 
+  const end = new Date(activeTarget.end_date).getTime();
+  const now = Date.now();
+  const daysLeft = Math.max(0, Math.ceil((end - now) / (1000 * 60 * 60 * 24)));
+
   return (
     <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px' }}>
       
@@ -155,8 +159,8 @@ export default function TargetLeaderboard({ user }) {
           </p>
         </div>
         <div style={{ background: 'rgba(255,47,146,0.1)', border: '1px solid var(--primary-glow)', padding: '10px 20px', borderRadius: '12px' }}>
-          <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--primary-glow)', textTransform: 'uppercase', letterSpacing: '1px' }}>Active Sprint</div>
-          <div style={{ fontSize: '16px', fontWeight: '900', color: 'white', marginTop: '2px' }}>{activeTarget.title || 'Sales Target'}</div>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--primary-glow)', textTransform: 'uppercase', letterSpacing: '1px' }}>Active</div>
+          <div style={{ fontSize: '16px', fontWeight: '900', color: 'white', marginTop: '2px' }}>Target Sprint</div>
         </div>
       </div>
 
@@ -196,7 +200,10 @@ export default function TargetLeaderboard({ user }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', fontWeight: '700' }}>
-          <span style={{ color: isMet ? '#10B981' : 'white' }}>{progressPercent.toFixed(1)}% Completed</span>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <span style={{ color: isMet ? '#10B981' : 'white' }}>{progressPercent.toFixed(1)}% Completed</span>
+            {daysLeft > 0 && <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>• {daysLeft} Days Left</span>}
+          </div>
           <span style={{ color: isMet ? '#10B981' : '#F59E0B' }}>
             {isMet ? '🎉 Target Achieved!' : `₹${remainingTarget.toLocaleString()} left to goal`}
           </span>

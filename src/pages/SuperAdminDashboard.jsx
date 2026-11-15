@@ -135,7 +135,7 @@ export default function SuperAdminDashboard() {
       </header>
 
       {/* KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '20px' }}>
         <StatCard 
             icon={<Film size={24} color="white" />} 
             title="Total Outlets" 
@@ -151,7 +151,7 @@ export default function SuperAdminDashboard() {
       </div>
 
       {/* Global Platform Fee Configuration Card */}
-      <div className="glass-card" style={{ padding: '32px', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="glass-card" style={{ padding: 'clamp(18px, 4vw, 32px)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
           <div style={{ 
             width: '40px', height: '40px', 
@@ -170,7 +170,7 @@ export default function SuperAdminDashboard() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '24px' }}>
             {/* Left side: Fee Toggles */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div className="input-group">

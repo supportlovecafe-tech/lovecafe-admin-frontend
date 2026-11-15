@@ -1,6 +1,6 @@
 import {  useState, useEffect } from 'react';
 import { navigate } from '../lib/router';
-import { LogOut, Home, Users, PieChart, Film, Coffee, Settings, Bell, KeyRound, History, Menu, X, Store, Package, Activity, Percent, Monitor, Archive, Sliders, Award } from 'lucide-react';
+import { LogOut, Home, Users, PieChart, Film, Coffee, Settings, Bell, KeyRound, History, Menu, X, Store, Package, Activity, Percent, Monitor, Archive, Sliders, Award, ShoppingBag } from 'lucide-react';
 
 export default function Layout({ user, onLogout, currentTab, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -72,8 +72,8 @@ export default function Layout({ user, onLogout, currentTab, children }) {
           {user.role === 'SUPER_ADMIN' ? (
             <>
               <SectionLabel>Global Management</SectionLabel>
+              <NavItem icon={<ShoppingBag size={20} />} label="Orders"          tabId="orders"         currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               <NavItem icon={<Film size={20} />}    label="Outlets"         tabId="outlets"        currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
-              <NavItem icon={<Award size={20} />}   label="Staff & Bonuses" tabId="staff-bonuses"  currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               <NavItem icon={<KeyRound size={20} />} label="Staff Access"    tabId="staff"          currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               <NavItem icon={<Settings size={20} />} label="Platform Fees"  tabId="dashboard"      currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
               <NavItem icon={<Activity size={20} />} label="System Health"  tabId="health"         currentTab={currentTab} onNav={() => setSidebarOpen(false)} />
@@ -149,9 +149,7 @@ export default function Layout({ user, onLogout, currentTab, children }) {
       </aside>
 
       {/* Main Content */}
-      <main className={`main-content ${sidebarOpen ? 'sidebar-open' : ''}`} style={{ 
-        padding: '40px 60px 40px 0', flex: 1, minHeight: '100vh'
-      }}>
+      <main className={`main-content ${sidebarOpen ? 'sidebar-open' : ''}`}>
         {children}
       </main>
     </div>

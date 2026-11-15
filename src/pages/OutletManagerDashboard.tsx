@@ -1,14 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, Clock, ShoppingBag, MessageSquare, Send, X, User, Phone, Power, Info, CreditCard, Monitor, ListFilter, Volume2, VolumeX } from 'lucide-react';
+import { CheckCircle, Clock, ShoppingBag, MessageSquare, Send, X, User, Phone, Power, Info, CreditCard, Monitor, ListFilter, Volume2, VolumeX, AlertTriangle, Pin, Lock, Unlock, KeyRound, Smartphone, ToggleLeft, ToggleRight } from 'lucide-react';
 import { Database } from '../lib/database.types';
 import { InventoryKillSwitch } from '../components/InventoryKillSwitch';
+import { getPaymentDisplayInfo } from '../lib/paymentUtils';
 
 type Order = Database['public']['Tables']['orders']['Row'] & {
-  customer_profiles: { first_name: string; last_name: string } | null;
+  customer_profiles?: { first_name: string; last_name: string } | null;
   matchingItems?: any[];
 };
 type Message = Database['public']['Tables']['order_messages']['Row'];
+
+// ─── Shared WebAudio Context Singleton (Avoids hardware audio thread leaks and renderer freeze) ───
+let sharedAudioCtx: AudioContext | null = null;
+const getSharedAudioContext = () => {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return null;
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioContextClass();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    return sharedAudioCtx;
+  } catch (e) {
+    console.error('[KDS Audio] Error accessing AudioContext:', e);
+    return null;
+  }
+};
 
 export default function OutletManagerDashboard({ user }: { user: any }) {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -20,10 +40,21 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
   const [showKillSwitch, setShowKillSwitch] = useState(false);
   const [showPaymentConfig, setShowPaymentConfig] = useState(false);
 
+  // Online Orders App Toggle (Admin/Manager Credentials only)
+  const isAdmin = user?.role === 'OUTLET_MANAGER' || user?.role === 'SUPER_ADMIN';
+  const [isOnlineOrderEnabled, setIsOnlineOrderEnabled] = useState<boolean>(true);
+  const [updatingOnlineOrder, setUpdatingOnlineOrder] = useState<boolean>(false);
+
   const [cinemaName, setCinemaName] = useState(user.cinema_name || '');
   const [kdsConfigs, setKdsConfigs] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<string | number>(1);
+  const [activeTab, setActiveTab] = useState<string | number>('NO_ASSIGNED_KDS');
   const [mobileQueueFilter, setMobileQueueFilter] = useState<'ALL' | 'PENDING' | 'PREPARING' | 'READY'>('ALL');
+
+  // PIN Lock State (Used only when JWT session expires and requires re-auth)
+  const [isPinLocked, setIsPinLocked] = useState(false);
+  const [lockPin, setLockPin] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [pinVerifying, setPinVerifying] = useState(false);
 
   const [soundEnabled, setSoundEnabled] = useState(false);
   const soundEnabledRef = React.useRef(soundEnabled);
@@ -32,11 +63,122 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
 
+  // Independent per-staff pinned orders stored locally
+  const staffStorageKey = `ce_kds_pinned_${user?.id || user?.email || 'staff'}`;
+  const [pinnedOrderIds, setPinnedOrderIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(staffStorageKey);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const togglePinOrder = (orderId: string) => {
+    setPinnedOrderIds(prev => {
+      const updated = prev.includes(orderId)
+        ? prev.filter(id => id !== orderId)
+        : [orderId, ...prev];
+      try {
+        localStorage.setItem(staffStorageKey, JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to save pinned orders to storage', e);
+      }
+      return updated;
+    });
+  };
+
+  const sortWithPinned = (orderList: Order[]) => {
+    return [...orderList].sort((a, b) => {
+      const aPinned = pinnedOrderIds.includes(a.id);
+      const bPinned = pinnedOrderIds.includes(b.id);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      return 0;
+    });
+  };
+
+  const handleToggleOnlineOrders = async () => {
+    if (!isAdmin) {
+      alert("Admin authorization required.\nOnly Manager or Super Admin credentials can change online ordering status.");
+      return;
+    }
+    if (!user?.cinema_id || user.cinema_id === 'default') {
+      alert("No active cinema outlet assigned to this session.");
+      return;
+    }
+
+    const nextState = !isOnlineOrderEnabled;
+    const confirmMessage = nextState
+      ? "Turn ON online orders from the App?\n\nCustomers will be able to browse and place orders immediately."
+      : "Turn OFF online orders from the App?\n\n⚠️ While turned OFF, customers attempting to order from the App will see: 'UNABLE to PLACE order Please contact outlet'. Local POS orders remain unaffected.";
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setUpdatingOnlineOrder(true);
+    try {
+      const { error: updateErr } = await supabase
+        .from('cinemas')
+        .update({ is_online_order_enabled: nextState })
+        .eq('id', user.cinema_id);
+
+      if (updateErr) {
+        const { error: rpcErr } = await supabase.rpc('toggle_outlet_online_orders', {
+          p_cinema_id: user.cinema_id,
+          p_enabled: nextState
+        });
+        if (rpcErr) throw rpcErr;
+      }
+
+      setIsOnlineOrderEnabled(nextState);
+    } catch (err: any) {
+      console.error('Failed to toggle online orders:', err);
+      alert(`Error updating online order status: ${err.message || 'Please check network and try again.'}`);
+    } finally {
+      setUpdatingOnlineOrder(false);
+    }
+  };
+
+  // Phase elapsed time calculation: resets whenever order moves to next phase
+  const getPhaseStartTime = (ord: Order) => {
+    let rawTime = ord.timestamp;
+    if (ord.status === 'PREPARING') {
+      rawTime = ord.metadata?.preparing_at || ord.metadata?.accepted_at || ord.timestamp;
+    } else if (ord.status === 'READY') {
+      rawTime = ord.metadata?.ready_at || ord.metadata?.preparing_at || ord.timestamp;
+    }
+    const t = (rawTime?.endsWith('Z') || rawTime?.includes('+')) ? new Date(rawTime).getTime() : new Date(rawTime + 'Z').getTime();
+    return t;
+  };
+
+  const getPhaseElapsedMinutes = (ord: Order) => {
+    const startMs = getPhaseStartTime(ord);
+    return Math.floor((Date.now() - startMs) / 60000);
+  };
+
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 10000); // Check delay status every 10 seconds
+    return () => clearInterval(timer);
+  }, []);
+
+  const criticalDelayedOrders = React.useMemo(() => {
+    return orders.filter(o => {
+      if (o.status === 'DELIVERED' || o.status === 'CANCELLED') return false;
+      return getPhaseElapsedMinutes(o) >= 30;
+    });
+  }, [orders, currentTime]);
+
+  const hasCriticalDelay = criticalDelayedOrders.length > 0;
+
+  // Standard chime for new tickets (uses shared AudioContext to prevent memory/thread leak)
   const playBuzzer = () => {
     try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioContextClass) return;
-      const audioCtx = new AudioContextClass();
+      const audioCtx = getSharedAudioContext();
+      if (!audioCtx) return;
       
       const playTone = (startTime: number, duration: number, frequency: number) => {
         const oscillator = audioCtx.createOscillator();
@@ -66,42 +208,143 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }
   };
 
+  // Emergency 30+ min delay buzzer (loud commercial dual-pulse alarm)
+  // Reuses shared AudioContext to prevent thousands of unclosed contexts freezing the browser renderer
+  const playCriticalBuzzer = () => {
+    try {
+      const audioCtx = getSharedAudioContext();
+      if (!audioCtx) return;
+      
+      const now = audioCtx.currentTime;
+      const createBuzzTone = (startTime: number, duration: number) => {
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(140, startTime);
+        osc.frequency.exponentialRampToValueAtTime(110, startTime + duration);
+
+        osc2.type = 'square';
+        osc2.frequency.setValueAtTime(280, startTime);
+        osc2.frequency.exponentialRampToValueAtTime(220, startTime + duration);
+
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.85, startTime + 0.04);
+        gain.gain.setValueAtTime(0.85, startTime + duration - 0.04);
+        gain.gain.linearRampToValueAtTime(0, startTime + duration);
+
+        osc.connect(gain);
+        osc2.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start(startTime);
+        osc2.start(startTime);
+        osc.stop(startTime + duration);
+        osc2.stop(startTime + duration);
+      };
+
+      createBuzzTone(now, 0.28);
+      createBuzzTone(now + 0.38, 0.42);
+    } catch (e) {
+      console.error("Critical alarm audio error:", e);
+    }
+  };
+
+  // Continuous emergency buzzer loop: fires every 3.5s while any ticket is >30m in its phase
+  useEffect(() => {
+    if (!hasCriticalDelay) return;
+
+    playCriticalBuzzer();
+
+    const interval = setInterval(() => {
+      playCriticalBuzzer();
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [hasCriticalDelay]);
+
   useEffect(() => {
     fetchOrders();
     fetchKdsConfigs();
     
-    if (!cinemaName && user.cinema_id && user.cinema_id !== 'default') {
-      supabase.from('cinemas').select('name').eq('id', user.cinema_id).single().then(({data}) => {
-        if (data) setCinemaName(data.name);
+    let orderSubscription: any = null;
+    let msgSubscription: any = null;
+    let cinemaSubscription: any = null;
+    let isSubscribed = true;
+    let reconnectTimeout: any = null;
+
+    if (user.cinema_id && user.cinema_id !== 'default') {
+      supabase.from('cinemas').select('name, is_online_order_enabled').eq('id', user.cinema_id).single().then(({data}) => {
+        if (data) {
+          if (data.name && !cinemaName) setCinemaName(data.name);
+          if (data.is_online_order_enabled !== undefined && data.is_online_order_enabled !== null) {
+            setIsOnlineOrderEnabled(data.is_online_order_enabled);
+          }
+        }
       });
+
+      cinemaSubscription = supabase
+        .channel(`kds_cinema_toggle_sync_${user.cinema_id}_${Date.now()}`)
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'cinemas', filter: `id=eq.${user.cinema_id}` },
+          (payload) => {
+            const updated = payload.new as any;
+            if (updated && updated.is_online_order_enabled !== undefined && updated.is_online_order_enabled !== null) {
+              setIsOnlineOrderEnabled(updated.is_online_order_enabled);
+            }
+          }
+        )
+        .subscribe();
     }
 
-    // Subscribe to orders
-    const orderSubscription = supabase
-      .channel('public:orders')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
-          if (payload.eventType === 'INSERT' && soundEnabledRef.current) {
-              playBuzzer();
-          }
-          if (!pendingUpdateRef.current) {
-            pendingUpdateRef.current = true;
-            setTimeout(() => {
-                fetchOrders();
-                pendingUpdateRef.current = false;
-            }, 500);
-          }
-      })
-      .subscribe();
+    const setupSubscriptions = () => {
+      if (!isSubscribed) return;
 
-    const msgSubscription = supabase
-      .channel('public:order_messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_messages' }, payload => {
-          const msg = payload.new as Message;
-          if (msg.sender_role === 'CUSTOMER' && msg.order_id) {
-            setUnreadMessages(prev => ({ ...prev, [msg.order_id!]: true }));
+      if (orderSubscription) supabase.removeChannel(orderSubscription);
+      if (msgSubscription) supabase.removeChannel(msgSubscription);
+      if (cinemaSubscription) supabase.removeChannel(cinemaSubscription);
+
+      orderSubscription = supabase
+        .channel(`kds_orders_channel_${user.cinema_id || 'all'}_${Date.now()}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
+            if (payload.eventType === 'INSERT' && soundEnabledRef.current) {
+                playBuzzer();
+            }
+            if (!pendingUpdateRef.current) {
+              pendingUpdateRef.current = true;
+              setTimeout(() => {
+                  fetchOrders();
+                  pendingUpdateRef.current = false;
+              }, 500);
+            }
+        })
+        .subscribe((status) => {
+          if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn(`[KDS] Realtime disconnected (${status}), will retry in 5s...`);
+            fetchOrders();
+            if (isSubscribed) {
+              clearTimeout(reconnectTimeout);
+              reconnectTimeout = setTimeout(() => {
+                if (isSubscribed) setupSubscriptions();
+              }, 5000);
+            }
           }
-      })
-      .subscribe();
+        });
+
+      msgSubscription = supabase
+        .channel(`kds_messages_channel_${user.cinema_id || 'all'}_${Date.now()}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_messages' }, payload => {
+            const msg = payload.new as Message;
+            if (msg.sender_role === 'CUSTOMER' && msg.order_id) {
+              setUnreadMessages(prev => ({ ...prev, [msg.order_id!]: true }));
+            }
+        })
+        .subscribe();
+    };
+
+    setupSubscriptions();
 
     // Fallback polling every 10 seconds to guarantee fresh orders even if realtime drops
     const pollInterval = setInterval(() => {
@@ -109,9 +352,12 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }, 10000);
 
     return () => {
+      isSubscribed = false;
+      clearTimeout(reconnectTimeout);
       clearInterval(pollInterval);
-      supabase.removeChannel(orderSubscription);
-      supabase.removeChannel(msgSubscription);
+      if (orderSubscription) supabase.removeChannel(orderSubscription);
+      if (msgSubscription) supabase.removeChannel(msgSubscription);
+      if (cinemaSubscription) supabase.removeChannel(cinemaSubscription);
     };
   }, []);
 
@@ -124,14 +370,15 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
         .eq('cinema_id', user.cinema_id)
         .order('screen_number');
       if (data) {
+        // Outlet managers & staff only see screens where user.id is in assigned_staffs
         const filteredData = data.filter(c => {
-          return c.assigned_staffs && c.assigned_staffs.includes(user.id);
+          return c.assigned_staffs && Array.isArray(c.assigned_staffs) && c.assigned_staffs.includes(user.id);
         });
         setKdsConfigs(filteredData);
         if (filteredData.length > 0) {
           setActiveTab(filteredData[0].screen_number);
         } else {
-          setActiveTab('OVERFLOW');
+          setActiveTab('NO_ASSIGNED_KDS');
         }
       }
     } catch (e) {
@@ -140,11 +387,10 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
   };
 
   const fetchOrders = async () => {
-    setLoading(true);
     try {
       let query = supabase
         .from('orders')
-        .select('*, customer_profiles(first_name, last_name)')
+        .select('*')
         .in('status', ['PENDING', 'PREPARING', 'READY'])
         .order('timestamp', { ascending: false });
       
@@ -153,14 +399,92 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
       }
       
       // Increased limit from 30 to 150 to ensure active orders don't disappear on busy days
-      const { data } = await query.limit(150);
-      if (data) setOrders(data as Order[]);
+      const { data, error } = await query.limit(150);
+
+      if (error) {
+        console.warn("[KDS] Order query failed, checking session validity:", error);
+        // If JWT expired or permission denied, attempt silent session refresh
+        if (error.code === '42501' || error.message?.includes('JWT') || error.message?.includes('permission')) {
+          const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+          if (refreshData?.session) {
+            const { data: retryData, error: retryErr } = await query.limit(150);
+            if (!retryErr && retryData) {
+              setOrders(retryData as Order[]);
+              return;
+            }
+          } else {
+            // Token expired and cannot be auto-refreshed: prompt staff for PIN unlock
+            setIsPinLocked(true);
+          }
+        }
+        return;
+      }
+
+      if (data) {
+        setOrders(prev => {
+          if (prev.length !== data.length) return data as Order[];
+          // Avoid creating a new array reference if data is completely unchanged (prevents UI re-render spikes)
+          const isIdentical = prev.every((prevOrd, idx) => {
+            const newOrd = data[idx];
+            if (!newOrd || prevOrd.id !== newOrd.id || prevOrd.status !== newOrd.status || prevOrd.payment_status !== newOrd.payment_status) {
+              return false;
+            }
+            const prevMeta = JSON.stringify(prevOrd.metadata || {});
+            const newMeta = JSON.stringify(newOrd.metadata || {});
+            if (prevMeta !== newMeta) return false;
+
+            const prevItems = typeof prevOrd.items === 'string' ? prevOrd.items : JSON.stringify(prevOrd.items);
+            const newItems = typeof newOrd.items === 'string' ? newOrd.items : JSON.stringify(newOrd.items);
+            return prevItems === newItems;
+          });
+          return isIdentical ? prev : (data as Order[]);
+        });
+      }
     } catch (e) {
       console.error("Failed to fetch orders:", e);
     } finally {
       setLoading(false);
     }
   };
+
+  const handlePinUnlock = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!lockPin || lockPin.length < 4) {
+      setPinError('Please enter your 4-digit PIN');
+      return;
+    }
+
+    setPinVerifying(true);
+    setPinError('');
+
+    try {
+      // 1. Verify PIN via security definer RPC
+      const { data: staffList, error: rpcErr } = await supabase.rpc('verify_staff_pin', {
+        p_cinema_id: user.cinema_id,
+        p_pin: lockPin.trim()
+      });
+
+      if (rpcErr) throw rpcErr;
+      if (!staffList || staffList.length === 0) {
+        setPinError('Incorrect PIN. Please try again.');
+        setPinVerifying(false);
+        return;
+      }
+
+      // 2. Refresh Supabase auth session
+      await supabase.auth.refreshSession().catch(() => {});
+
+      // 3. Unlock KDS and immediately reload orders
+      setIsPinLocked(false);
+      setLockPin('');
+      await fetchOrders();
+    } catch (err: any) {
+      setPinError(err.message || 'Verification failed. Try again.');
+    } finally {
+      setPinVerifying(false);
+    }
+  };
+
 
   const updateStatus = async (orderId: string, newStatus: string) => {
     const previousOrders = [...orders];
@@ -176,25 +500,45 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }));
 
     const isDelivered = newStatus === 'DELIVERED';
+    const isPreparing = newStatus === 'PREPARING';
+    const isReady = newStatus === 'READY';
+    const nowIso = new Date().toISOString();
     const currentMeta = (order.metadata && typeof order.metadata === 'object') ? order.metadata : {};
-    const updatedMetadata = isDelivered ? {
-      ...currentMeta,
-      delivered_by: user?.id || null,
-      delivered_by_name: user?.full_name || user?.name || user?.email || 'Staff',
-      delivered_by_code: user?.employee_code || (user?.id ? 'EMP-' + user.id.substring(0, 6).toUpperCase() : 'STAFF'),
-      delivered_at: new Date().toISOString()
-    } : currentMeta;
+    
+    let updatedMetadata: any = { ...currentMeta };
+    if (isPreparing) {
+      updatedMetadata.preparing_at = nowIso;
+      updatedMetadata.accepted_at = nowIso;
+      updatedMetadata.accepted_by = user?.id || null;
+      updatedMetadata.accepted_by_name = user?.full_name || user?.name || 'Staff';
+    } else if (isReady) {
+      updatedMetadata.ready_at = nowIso;
+      updatedMetadata.ready_by = user?.id || null;
+      updatedMetadata.ready_by_name = user?.full_name || user?.name || 'Staff';
+    } else if (isDelivered) {
+      updatedMetadata.delivered_by = user?.id || null;
+      updatedMetadata.delivered_by_name = user?.full_name || user?.name || user?.email || 'Staff';
+      updatedMetadata.delivered_by_code = user?.employee_code || (user?.id ? 'EMP-' + user.id.substring(0, 6).toUpperCase() : 'STAFF');
+      updatedMetadata.delivered_at = nowIso;
+      setPinnedOrderIds(prev => {
+        const updated = prev.filter(id => id !== orderId);
+        try {
+          localStorage.setItem(staffStorageKey, JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+    }
 
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus, items: updatedItems, metadata: updatedMetadata } : o));
 
     try {
       const updatePayload: any = { 
         status: newStatus,
-        items: updatedItems
+        items: updatedItems,
+        metadata: updatedMetadata
       };
-      if (isDelivered) {
-        updatePayload.metadata = updatedMetadata;
-        if (user?.id) updatePayload.delivered_by = user.id;
+      if (isDelivered && user?.id) {
+        updatePayload.delivered_by = user.id;
       }
 
       const { error } = await supabase
@@ -245,14 +589,23 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }
 
     const isDelivered = finalOrderStatus === 'DELIVERED';
+    const isPreparing = finalOrderStatus === 'PREPARING';
+    const isReady = finalOrderStatus === 'READY';
+    const nowIso = new Date().toISOString();
     const currentMeta = (order.metadata && typeof order.metadata === 'object') ? order.metadata : {};
-    const updatedMetadata = isDelivered ? {
-      ...currentMeta,
-      delivered_by: user?.id || null,
-      delivered_by_name: user?.full_name || user?.name || user?.email || 'Staff',
-      delivered_by_code: user?.employee_code || (user?.id ? 'EMP-' + user.id.substring(0, 6).toUpperCase() : 'STAFF'),
-      delivered_at: new Date().toISOString()
-    } : currentMeta;
+    
+    let updatedMetadata: any = { ...currentMeta };
+    if (isPreparing && !currentMeta.preparing_at) {
+      updatedMetadata.preparing_at = nowIso;
+      updatedMetadata.accepted_at = nowIso;
+    } else if (isReady && !currentMeta.ready_at) {
+      updatedMetadata.ready_at = nowIso;
+    } else if (isDelivered) {
+      updatedMetadata.delivered_by = user?.id || null;
+      updatedMetadata.delivered_by_name = user?.full_name || user?.name || user?.email || 'Staff';
+      updatedMetadata.delivered_by_code = user?.employee_code || (user?.id ? 'EMP-' + user.id.substring(0, 6).toUpperCase() : 'STAFF');
+      updatedMetadata.delivered_at = nowIso;
+    }
 
     const previousOrders = [...orders];
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, status: finalOrderStatus, metadata: updatedMetadata } : o));
@@ -260,11 +613,11 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     try {
       const updatePayload: any = { 
         items: updatedItems, 
-        status: finalOrderStatus 
+        status: finalOrderStatus,
+        metadata: updatedMetadata
       };
-      if (isDelivered) {
-        updatePayload.metadata = updatedMetadata;
-        if (user?.id) updatePayload.delivered_by = user.id;
+      if (isDelivered && user?.id) {
+        updatePayload.delivered_by = user.id;
       }
 
       const { error } = await supabase
@@ -337,23 +690,38 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }
 
     const isDelivered = finalOrderStatus === 'DELIVERED';
+    const isPreparing = finalOrderStatus === 'PREPARING';
+    const isReady = finalOrderStatus === 'READY';
+    const nowIso = new Date().toISOString();
     const currentMeta = (order.metadata && typeof order.metadata === 'object') ? order.metadata : {};
-    const updatedMetadata = isDelivered ? {
-      ...currentMeta,
-      delivered_by: user?.id || null,
-      delivered_by_name: user?.full_name || user?.name || user?.email || 'Staff',
-      delivered_by_code: user?.employee_code || (user?.id ? 'EMP-' + user.id.substring(0, 6).toUpperCase() : 'STAFF'),
-      delivered_at: new Date().toISOString()
-    } : currentMeta;
+    
+    let updatedMetadata: any = { ...currentMeta };
+    if (isPreparing && !currentMeta.preparing_at) {
+      updatedMetadata.preparing_at = nowIso;
+      updatedMetadata.accepted_at = nowIso;
+    } else if (isReady && !currentMeta.ready_at) {
+      updatedMetadata.ready_at = nowIso;
+    } else if (isDelivered) {
+      updatedMetadata.delivered_by = user?.id || null;
+      updatedMetadata.delivered_by_name = user?.full_name || user?.name || user?.email || 'Staff';
+      updatedMetadata.delivered_by_code = user?.employee_code || (user?.id ? 'EMP-' + user.id.substring(0, 6).toUpperCase() : 'STAFF');
+      updatedMetadata.delivered_at = nowIso;
+      setPinnedOrderIds(prev => {
+        const updated = prev.filter(id => id !== orderId);
+        try {
+          localStorage.setItem(staffStorageKey, JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+    }
 
     const previousOrders = [...orders];
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, status: finalOrderStatus, metadata: updatedMetadata } : o));
 
     try {
-      const updatePayload: any = { items: updatedItems, status: finalOrderStatus };
-      if (isDelivered) {
-        updatePayload.metadata = updatedMetadata;
-        if (user?.id) updatePayload.delivered_by = user.id;
+      const updatePayload: any = { items: updatedItems, status: finalOrderStatus, metadata: updatedMetadata };
+      if (isDelivered && user?.id) {
+        updatePayload.delivered_by = user.id;
       }
 
       const { error } = await supabase.from('orders').update(updatePayload).eq('id', orderId);
@@ -371,6 +739,15 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }
   };
 
+  const handleOrderSettleSuccess = (orderId: string, finalPaymentMethod: string, newMetadata: any) => {
+    setOrders(prev => prev.map(o => o.id === orderId ? {
+      ...o,
+      payment_status: 'PAID',
+      payment_method: finalPaymentMethod,
+      metadata: newMetadata
+    } : o));
+  };
+
   const openChat = (order: Order) => {
     setActiveChat(order);
     setUnreadMessages(prev => ({ ...prev, [order.id]: false }));
@@ -380,6 +757,7 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
   const filterOrderItemsForTab = (order: Order, tab: string | number) => {
     const items = safeParseItems(order.items);
     if (tab === 'ALL') return items;
+    if (tab === 'NO_ASSIGNED_KDS') return [];
 
     if (tab === 'OVERFLOW') {
       // Find all categories assigned to any screen
@@ -388,18 +766,22 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
       }, [] as string[]).map(c => c.toUpperCase());
 
       return items.filter((item: any) => {
-        const cat = (item.food_category || item.category || '').toUpperCase();
-        return !allAssigned.includes(cat);
+        const rawCat = (item.food_category || item.category || '').toUpperCase().trim();
+        const catUnderscore = rawCat.replace(/\s+/g, '_');
+        const catSpaces = rawCat.replace(/_/g, ' ');
+        return !allAssigned.includes(rawCat) && !allAssigned.includes(catUnderscore) && !allAssigned.includes(catSpaces);
       });
     }
 
     const screenConfig = kdsConfigs.find(c => c.screen_number === Number(tab));
     if (!screenConfig) return [];
 
-    const assigned = (screenConfig.assigned_categories || []).map(c => c.toUpperCase());
+    const assigned = (screenConfig.assigned_categories || []).map((c: string) => c.toUpperCase());
     return items.filter((item: any) => {
-      const cat = (item.food_category || item.category || '').toUpperCase();
-      return assigned.includes(cat);
+      const rawCat = (item.food_category || item.category || '').toUpperCase().trim();
+      const catUnderscore = rawCat.replace(/\s+/g, '_');
+      const catSpaces = rawCat.replace(/_/g, ' ');
+      return assigned.includes(rawCat) || assigned.includes(catUnderscore) || assigned.includes(catSpaces);
     });
   };
 
@@ -427,10 +809,31 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
   };
 
   const renderColumns = () => {
-    const pendingPartial = getPartialOrdersForTabAndStatus(activeTab, 'PENDING');
-    const preparingPartial = getPartialOrdersForTabAndStatus(activeTab, 'PREPARING');
-    const readyPartial = getPartialOrdersForTabAndStatus(activeTab, 'READY');
-    const totalOrders = pendingPartial.length + preparingPartial.length + readyPartial.length;
+    if (activeTab === 'NO_ASSIGNED_KDS' || kdsConfigs.length === 0) {
+      return (
+        <div className="glass-card" style={{ padding: '48px 24px', textAlign: 'center', maxWidth: '580px', margin: '40px auto', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ width: '60px', height: '60px', borderRadius: '18px', background: 'rgba(255,152,0,0.15)', color: '#FF9800', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px', border: '1px solid rgba(255,152,0,0.3)' }}>
+            <Monitor size={28} />
+          </div>
+          <h3 style={{ fontSize: '20px', fontWeight: 800, marginBottom: '8px' }}>No Assigned KDS Station</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1.6, margin: '0 0 20px' }}>
+            Your staff account ({user?.full_name || user?.name || user?.email || 'Current User'}) is not assigned to any KDS station at this outlet.
+          </p>
+          <div style={{ fontSize: '13px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '14px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            Please have an administrator assign your user to a KDS station under <strong>KDS Config</strong>.
+          </div>
+        </div>
+      );
+    }
+
+    const rawPending = getPartialOrdersForTabAndStatus(activeTab, 'PENDING');
+    const rawPreparing = getPartialOrdersForTabAndStatus(activeTab, 'PREPARING');
+    const rawReady = getPartialOrdersForTabAndStatus(activeTab, 'READY');
+    const totalOrders = rawPending.length + rawPreparing.length + rawReady.length;
+
+    const pendingPartial = sortWithPinned(rawPending);
+    const preparingPartial = sortWithPinned(rawPreparing);
+    const readyPartial = sortWithPinned(rawReady);
 
     const showPending = mobileQueueFilter === 'ALL' || mobileQueueFilter === 'PENDING';
     const showPreparing = mobileQueueFilter === 'ALL' || mobileQueueFilter === 'PREPARING';
@@ -548,6 +951,11 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
                 <OrderCard 
                   key={order.id} 
                   order={order} 
+                  user={user}
+                  currentTime={currentTime}
+                  isPinned={pinnedOrderIds.includes(order.id)}
+                  onTogglePin={togglePinOrder}
+                  onSettleSuccess={handleOrderSettleSuccess}
                   hasUnread={unreadMessages[order.id]} 
                   onAction={() => updateStatus(order.id, 'PREPARING')} 
                   onChat={() => openChat(order)} 
@@ -574,6 +982,11 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
                 <OrderCard 
                   key={order.id} 
                   order={order} 
+                  user={user}
+                  currentTime={currentTime}
+                  isPinned={pinnedOrderIds.includes(order.id)}
+                  onTogglePin={togglePinOrder}
+                  onSettleSuccess={handleOrderSettleSuccess}
                   hasUnread={unreadMessages[order.id]} 
                   onAction={() => updateStatus(order.id, 'READY')} 
                   onChat={() => openChat(order)} 
@@ -600,6 +1013,11 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
                 <OrderCard 
                   key={order.id} 
                   order={order} 
+                  user={user}
+                  currentTime={currentTime}
+                  isPinned={pinnedOrderIds.includes(order.id)}
+                  onTogglePin={togglePinOrder}
+                  onSettleSuccess={handleOrderSettleSuccess}
                   hasUnread={unreadMessages[order.id]} 
                   onAction={() => updateStatus(order.id, 'DELIVERED')} 
                   onChat={() => openChat(order)} 
@@ -655,6 +1073,12 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
         .urgency-critical-border { animation: urgency-pulse-red-border 1.5s infinite; }
         .urgency-critical-glow { animation: urgency-pulse-red-glow 1.5s infinite; }
         .urgency-high { animation: urgency-pulse-orange 2s infinite; }
+        .kds-card-pinned {
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .kds-card-pinned:hover {
+          transform: translateY(-2px);
+        }
         .kds-columns {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -779,13 +1203,63 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
         </p>
         <div className="kds-header-actions">
              <button 
-                onClick={() => setSoundEnabled(!soundEnabled)}
+                onClick={() => {
+                  setSoundEnabled(!soundEnabled);
+                  if (hasCriticalDelay) {
+                    alert("⚠️ Notice: The 30+ minute critical delay buzzer is active!\n\nPer management policy, this emergency alarm cannot be muted using the screen sound button. It will continue sounding until staff marks or accepts the delayed order(s) to the next phase.");
+                  }
+                }}
                 className="glass-card" 
-                style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '14px', background: soundEnabled ? 'rgba(76, 175, 80, 0.1)' : 'rgba(255, 255, 255, 0.05)', border: soundEnabled ? '1px solid rgba(76, 175, 80, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)', color: soundEnabled ? '#4CAF50' : 'var(--text-secondary)', cursor: 'pointer' }}
+                style={{ 
+                  padding: '10px 14px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px', 
+                  borderRadius: '14px', 
+                  background: hasCriticalDelay ? 'rgba(220, 38, 38, 0.25)' : (soundEnabled ? 'rgba(76, 175, 80, 0.1)' : 'rgba(255, 255, 255, 0.05)'), 
+                  border: hasCriticalDelay ? '1.5px solid #ef4444' : (soundEnabled ? '1px solid rgba(76, 175, 80, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)'), 
+                  color: hasCriticalDelay ? '#fca5a5' : (soundEnabled ? '#4CAF50' : 'var(--text-secondary)'), 
+                  cursor: 'pointer' 
+                }}
+                title={hasCriticalDelay ? "Emergency 30+ min delay buzzer is active! Accept or mark tickets to silence." : "Toggle new ticket alert sound"}
              >
                  {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
                  <span style={{ fontWeight: 600, fontSize: '13px' }}>Alerts {soundEnabled ? 'ON' : 'OFF'}</span>
+                 {hasCriticalDelay && (
+                   <span style={{
+                     background: '#dc2626',
+                     color: '#fff',
+                     fontSize: '9px',
+                     fontWeight: 900,
+                     padding: '2px 6px',
+                     borderRadius: '4px',
+                     letterSpacing: '0.5px'
+                   }}>
+                     🚨 BUZZER ACTIVE (&gt;30m)
+                   </span>
+                 )}
              </button>
+             {pinnedOrderIds.length > 0 && (
+               <div 
+                 className="glass-card" 
+                 style={{ 
+                   padding: '10px 14px', 
+                   display: 'flex', 
+                   alignItems: 'center', 
+                   gap: '6px', 
+                   borderRadius: '14px',
+                   background: 'rgba(245, 158, 11, 0.12)',
+                   border: '1px solid rgba(245, 158, 11, 0.35)',
+                   color: '#fbbf24'
+                 }}
+                 title="Your pinned orders (isolated to your terminal only)"
+               >
+                   <Pin size={15} style={{ transform: 'rotate(-45deg)' }} />
+                   <span style={{ fontWeight: 600, fontSize: '13px' }}>
+                     {pinnedOrderIds.length} Pinned
+                   </span>
+               </div>
+             )}
              <button 
                 onClick={() => setShowKillSwitch(true)}
                 className="glass-card" 
@@ -802,6 +1276,60 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
                  <CreditCard size={16} />
                  <span style={{ fontWeight: 600, fontSize: '13px' }}>Payment</span>
              </button>
+             {/* Admin Credentials Only: Online Order Toggle Switch */}
+             {isAdmin ? (
+               <button 
+                  onClick={handleToggleOnlineOrders}
+                  disabled={updatingOnlineOrder}
+                  className="glass-card" 
+                  style={{ 
+                    padding: '10px 14px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    borderRadius: '14px', 
+                    background: isOnlineOrderEnabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.18)', 
+                    border: isOnlineOrderEnabled ? '1.5px solid rgba(16, 185, 129, 0.45)' : '1.5px solid rgba(239, 68, 68, 0.55)', 
+                    color: isOnlineOrderEnabled ? '#10b981' : '#f87171', 
+                    cursor: updatingOnlineOrder ? 'wait' : 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: isOnlineOrderEnabled ? '0 0 12px rgba(16, 185, 129, 0.18)' : '0 0 12px rgba(239, 68, 68, 0.22)'
+                  }}
+                  title={isOnlineOrderEnabled ? "App Online Orders are ACTIVE. Click to Pause." : "App Online Orders are PAUSED. Click to Turn ON."}
+               >
+                   <Smartphone size={16} />
+                   <span style={{ fontWeight: 700, fontSize: '13px' }}>
+                     {updatingOnlineOrder ? 'Updating...' : (isOnlineOrderEnabled ? 'App Orders ON' : 'App Orders OFF')}
+                   </span>
+                   {isOnlineOrderEnabled ? (
+                     <ToggleRight size={20} color="#10b981" />
+                   ) : (
+                     <ToggleLeft size={20} color="#f87171" />
+                   )}
+               </button>
+             ) : (
+               <div 
+                  className="glass-card" 
+                  style={{ 
+                    padding: '10px 14px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    borderRadius: '14px', 
+                    background: 'rgba(255, 255, 255, 0.04)', 
+                    border: '1px solid rgba(255, 255, 255, 0.08)', 
+                    color: isOnlineOrderEnabled ? '#10b981' : '#f87171', 
+                    opacity: 0.85,
+                    cursor: 'not-allowed'
+                  }}
+                  title="App Order toggle is restricted to Admin credentials only."
+               >
+                   <Lock size={14} style={{ opacity: 0.6 }} />
+                   <span style={{ fontWeight: 600, fontSize: '12px' }}>
+                     App Orders: {isOnlineOrderEnabled ? 'ON' : 'OFF'}
+                   </span>
+               </div>
+             )}
              <div className="glass-card" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '14px' }}>
                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4CAF50', boxShadow: '0 0 8px #4CAF50', flexShrink: 0 }}></div>
                  <span style={{ fontWeight: 600, fontSize: '13px' }}>Live</span>
@@ -809,65 +1337,126 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
         </div>
       </header>
 
-      {/* Screen Tabs Bar */}
+      {/* 🚨 30+ MINUTE CRITICAL DELAY EMERGENCY BUZZER BANNER */}
+      {hasCriticalDelay && (
+        <div style={{
+          background: 'linear-gradient(90deg, rgba(220, 38, 38, 0.95) 0%, rgba(185, 28, 28, 0.95) 50%, rgba(220, 38, 38, 0.95) 100%)',
+          border: '2px solid #ef4444',
+          borderRadius: '14px',
+          padding: '12px 18px',
+          boxShadow: '0 0 30px rgba(220, 38, 38, 0.5), inset 0 0 15px rgba(255, 255, 255, 0.2)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+          color: '#ffffff',
+          flexWrap: 'wrap',
+          animation: 'urgency-pulse-red-glow 1.5s infinite',
+          marginTop: '-4px',
+          marginBottom: '8px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '280px' }}>
+            <div style={{
+              background: '#ffffff',
+              color: '#dc2626',
+              borderRadius: '50%',
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              boxShadow: '0 0 12px rgba(255,255,255,0.6)'
+            }}>
+              <AlertTriangle size={22} />
+            </div>
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span>🚨 EMERGENCY BUZZER ACTIVE: ORDER WAITING &gt;30 MINS!</span>
+                <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.35)', padding: '2px 8px', borderRadius: '4px' }}>
+                  {criticalDelayedOrders.length} {criticalDelayedOrders.length === 1 ? 'ticket' : 'tickets'} delayed
+                </span>
+              </div>
+              <div style={{ fontSize: '12px', opacity: 0.95, marginTop: '2px' }}>
+                Buzzer cannot be muted by sound button. Progress ticket(s) to the next phase to silence alarm:
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            {criticalDelayedOrders.slice(0, 3).map(o => {
+              const elapsed = getPhaseElapsedMinutes(o);
+              const qName = o.status === 'PENDING' ? 'New Ticket' : (o.status === 'PREPARING' ? 'Kitchen' : 'Delivery');
+              return (
+                <div
+                  key={o.id}
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.45)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '8px',
+                    padding: '5px 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '12px',
+                    fontWeight: 800
+                  }}
+                >
+                  <Clock size={13} />
+                  <span>#{o.display_id || o.id?.substring(0, 6).toUpperCase()} ({elapsed}m in {qName})</span>
+                </div>
+              );
+            })}
+            {criticalDelayedOrders.length > 3 && (
+              <span style={{ fontSize: '11px', fontWeight: 800, background: 'rgba(0,0,0,0.35)', padding: '4px 8px', borderRadius: '6px' }}>
+                +{criticalDelayedOrders.length - 3} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Screen Tabs Bar: Outlet managers ONLY see their assigned KDS screen(s) */}
       <div className="kds-tabs-bar" style={{ marginTop: '-8px' }}>
-        <button
-          onClick={() => setActiveTab('ALL')}
-          style={{
-            padding: '10px 20px',
-            background: activeTab === 'ALL' ? 'var(--primary-glow)' : 'rgba(255,255,255,0.02)',
-            color: activeTab === 'ALL' ? 'white' : 'var(--text-secondary)',
-            border: activeTab === 'ALL' ? '1px solid var(--primary-glow)' : '1px solid rgba(255,255,255,0.05)',
+        {kdsConfigs.length === 0 ? (
+          <div style={{
+            padding: '10px 16px',
+            background: 'rgba(255, 152, 0, 0.1)',
+            color: '#FF9800',
+            border: '1px solid rgba(255, 152, 0, 0.25)',
             borderRadius: '12px',
-            fontWeight: 'bold',
-            cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '8px',
-            transition: 'all 0.2s ease',
-            whiteSpace: 'nowrap'
-          }}
-        >
-          <Monitor size={16} />
-          <span>All Stations</span>
-        </button>
-        {kdsConfigs.map(c => (
-          <button
-            key={c.screen_number}
-            onClick={() => setActiveTab(c.screen_number)}
-            style={{
-              padding: '10px 20px',
-              background: activeTab === c.screen_number ? 'var(--secondary-glow)' : 'rgba(255,255,255,0.02)',
-              color: activeTab === c.screen_number ? 'white' : 'var(--text-secondary)',
-              border: activeTab === c.screen_number ? '1px solid rgba(0,210,255,0.3)' : '1px solid rgba(255,255,255,0.05)',
-              borderRadius: '12px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: '8px',
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <Monitor size={16} />
-            <span>{c.screen_name || `KDS Station ${c.screen_number}`}</span>
-          </button>
-        ))}
-        <button
-          onClick={() => setActiveTab('OVERFLOW')}
-          style={{
-            padding: '10px 20px',
-            background: activeTab === 'OVERFLOW' ? 'rgba(255,152,0,0.1)' : 'rgba(255,255,255,0.02)',
-            color: activeTab === 'OVERFLOW' ? '#FF9800' : 'var(--text-secondary)',
-            border: activeTab === 'OVERFLOW' ? '1px solid rgba(255,152,0,0.3)' : '1px solid rgba(255,255,255,0.05)',
-            borderRadius: '12px',
-            fontWeight: 'bold',
-            cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '8px',
-            transition: 'all 0.2s ease',
-            whiteSpace: 'nowrap'
-          }}
-        >
-          <Info size={16} />
-          <span>Overflow (Unassigned)</span>
-        </button>
+            fontSize: '13px',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <AlertTriangle size={16} />
+            <span>No KDS Station Assigned to Your Account</span>
+          </div>
+        ) : (
+          kdsConfigs.map(c => (
+            <button
+              key={c.screen_number}
+              onClick={() => setActiveTab(c.screen_number)}
+              style={{
+                padding: '10px 20px',
+                background: activeTab === c.screen_number ? 'var(--secondary-glow)' : 'rgba(255,255,255,0.02)',
+                color: activeTab === c.screen_number ? 'white' : 'var(--text-secondary)',
+                border: activeTab === c.screen_number ? '1px solid rgba(0,210,255,0.3)' : '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '12px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '8px',
+                transition: 'all 0.2s ease',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <Monitor size={16} />
+              <span>{c.screen_name || `KDS Station ${c.screen_number}`}</span>
+            </button>
+          ))
+        )}
       </div>
 
       {/* Grid columns */}
@@ -877,12 +1466,249 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
       {showPaymentConfig && <PaymentConfigModal cinemaId={user.cinema_id} onClose={() => setShowPaymentConfig(false)} />}
       
       {activeChat && <ChatModal order={activeChat} onClose={() => setActiveChat(null)} />}
+
+      {/* ─── KDS Inactivity PIN Unlock Modal ─── */}
+      {isPinLocked && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(5, 5, 8, 0.94)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div className="glass-card" style={{
+            width: '100%',
+            maxWidth: '400px',
+            background: 'linear-gradient(180deg, rgba(26, 26, 36, 0.98) 0%, rgba(15, 15, 22, 0.99) 100%)',
+            border: '1px solid rgba(255, 255, 255, 0.14)',
+            borderRadius: '24px',
+            padding: '32px 24px',
+            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(0, 210, 255, 0.1)',
+            textAlign: 'center'
+          }}>
+            {/* Lock Icon */}
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '20px',
+              background: 'linear-gradient(135deg, rgba(0, 210, 255, 0.2) 0%, rgba(255, 47, 146, 0.2) 100%)',
+              border: '1px solid rgba(0, 210, 255, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px',
+              color: 'var(--secondary-glow)'
+            }}>
+              <Lock size={28} />
+            </div>
+
+            <h2 style={{ fontSize: '22px', fontWeight: 900, margin: '0 0 6px', letterSpacing: '-0.5px' }}>
+              Authentication Required
+            </h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
+              Staff session expired. Enter your 4-digit staff PIN to resume live orders.
+            </p>
+
+            {cinemaName && (
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 14px',
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '20px',
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                marginBottom: '20px'
+              }}>
+                <Monitor size={14} />
+                <span>{cinemaName}</span>
+              </div>
+            )}
+
+            {/* PIN Dots */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '12px',
+              marginBottom: '20px'
+            }}>
+              {[0, 1, 2, 3].map(i => {
+                const isFilled = lockPin.length > i;
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      width: '48px',
+                      height: '52px',
+                      borderRadius: '12px',
+                      background: isFilled ? 'rgba(0, 210, 255, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                      border: isFilled ? '2px solid var(--secondary-glow)' : '1px solid rgba(255, 255, 255, 0.12)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '24px',
+                      color: 'var(--secondary-glow)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {isFilled ? '●' : ''}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Physical keyboard hidden input */}
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={4}
+              value={lockPin}
+              onChange={e => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                setLockPin(val);
+                if (pinError) setPinError('');
+              }}
+              autoFocus
+              style={{
+                position: 'absolute',
+                opacity: 0,
+                pointerEvents: 'none',
+                height: 0,
+                width: 0
+              }}
+            />
+
+            {pinError && (
+              <div style={{
+                color: '#ff6b9d',
+                background: 'rgba(255, 47, 146, 0.1)',
+                border: '1px solid rgba(255, 47, 146, 0.3)',
+                padding: '10px 14px',
+                borderRadius: '12px',
+                fontSize: '13px',
+                fontWeight: 600,
+                marginBottom: '16px'
+              }}>
+                {pinError}
+              </div>
+            )}
+
+            {/* Touch Keypad */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '8px',
+              maxWidth: '280px',
+              margin: '0 auto 20px'
+            }}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLR', '0', '⌫'].map(k => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => {
+                    if (k === 'CLR') {
+                      setLockPin('');
+                      setPinError('');
+                    } else if (k === '⌫') {
+                      setLockPin(prev => prev.slice(0, -1));
+                      setPinError('');
+                    } else {
+                      if (lockPin.length < 4) {
+                        const newPin = lockPin + k;
+                        setLockPin(newPin);
+                        setPinError('');
+                      }
+                    }
+                  }}
+                  style={{
+                    padding: '14px 0',
+                    borderRadius: '12px',
+                    background: (k === 'CLR' || k === '⌫') ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.07)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    color: (k === 'CLR' || k === '⌫') ? 'var(--text-muted)' : '#ffffff',
+                    fontSize: (k === 'CLR' || k === '⌫') ? '12px' : '18px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => handlePinUnlock()}
+              disabled={pinVerifying || lockPin.length < 4}
+              className="btn-lucrative"
+              style={{
+                width: '100%',
+                padding: '14px',
+                fontSize: '13px',
+                fontWeight: 800,
+                letterSpacing: '1px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                opacity: (pinVerifying || lockPin.length < 4) ? 0.6 : 1,
+                cursor: (pinVerifying || lockPin.length < 4) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {pinVerifying ? (
+                <span>VERIFYING PIN...</span>
+              ) : (
+                <>
+                  <Unlock size={16} />
+                  <span>RESUME KDS TERMINAL</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut().catch(() => {});
+                window.location.reload();
+              }}
+              style={{
+                marginTop: '14px',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textDecoration: 'underline'
+              }}
+            >
+              Log out completely
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLabel, actionColor, items }: {
+function OrderCard({ order, user, isPinned, onTogglePin, onSettleSuccess, hasUnread, onAction, onChat, onToggleItem, actionLabel, actionColor, items, currentTime }: {
   order: Order;
+  user?: any;
+  isPinned?: boolean;
+  onTogglePin?: (orderId: string) => void;
+  onSettleSuccess?: (orderId: string, finalPaymentMethod: string, newMetadata: any) => void;
   hasUnread: boolean;
   onAction: () => void;
   onChat: () => void;
@@ -890,24 +1716,31 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
   actionLabel: string;
   actionColor: string;
   items: any[];
+  currentTime?: number;
 }) {
   const [showUser, setShowUser] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
 
-  useEffect(() => {
-    const calc = () => {
-      const rawTime = order.timestamp;
-      const t = (rawTime?.endsWith('Z') || rawTime?.includes('+')) ? new Date(rawTime).getTime() : new Date(rawTime + 'Z').getTime();
-      const diff = (Date.now() - t) / 60000;
-      setElapsed(Math.floor(diff));
-    };
-    calc();
-    const interval = setInterval(calc, 30000); // Update every 30s
-    return () => clearInterval(interval);
-  }, [order.timestamp]);
+  // Synchronously compute elapsed minutes using parent currentTime tick (zero per-card interval overhead)
+  const nowMs = currentTime || Date.now();
+  let phaseRawTime = order.timestamp;
+  if (order.status === 'PREPARING') {
+    phaseRawTime = order.metadata?.preparing_at || order.metadata?.accepted_at || order.timestamp;
+  } else if (order.status === 'READY') {
+    phaseRawTime = order.metadata?.ready_at || order.metadata?.preparing_at || order.timestamp;
+  }
+  const phaseT = (phaseRawTime?.endsWith('Z') || phaseRawTime?.includes('+')) ? new Date(phaseRawTime).getTime() : new Date(phaseRawTime + 'Z').getTime();
+  const elapsed = Math.max(0, Math.floor((nowMs - phaseT) / 60000));
 
   const getUrgencyConfig = () => {
     const status = order.status;
+    if (elapsed >= 30) {
+      return { 
+        color: '#dc2626', 
+        glow: '0 0 35px rgba(220, 38, 38, 0.95)', 
+        badge: '🚨 BUZZER (>30M)', 
+        className: 'urgency-critical-glow' 
+      };
+    }
     if (status === 'PENDING') {
       if (elapsed < 2) return { color: actionColor, glow: 'none', badge: 'Accept Now', className: '' };
       if (elapsed < 5) return { color: '#FFEB3B', glow: '0 0 15px rgba(255, 235, 59, 0.3)', badge: 'Waiting', className: '' };
@@ -933,12 +1766,93 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
   const rawTime = order.timestamp;
   const utcDate = rawTime?.endsWith('Z') || rawTime?.includes('+') ? new Date(rawTime) : new Date(rawTime + 'Z');
   const timeStr = utcDate.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
-  const displayOrderId = order.display_id || order.id?.substring(0,6).toUpperCase();
-  const customerName = order.customer_profiles ? `${order.customer_profiles.first_name} ${order.customer_profiles.last_name}` : 'Demo Customer';
+  const displayOrderId = order.display_id || order.id?.substring(0, 6).toUpperCase();
+  const customerName = order.customer_profiles 
+    ? `${order.customer_profiles.first_name || ''} ${order.customer_profiles.last_name || ''}`.trim() 
+    : (order.metadata?.customer_name || order.metadata?.guest_name || (order.customer_phone ? `Customer (${order.customer_phone})` : 'Walk-in Customer'));
 
   const isPosCash = order.payment_method === 'POS_CASH';
   const isPosSplit = order.payment_method === 'POS_SPLIT';
-  const isCash = isPosCash || isPosSplit || order.payment_method === 'CASH';
+  const isCash = isPosCash || isPosSplit || order.payment_method === 'CASH' || order.metadata?.settled_payment_mode === 'CASH';
+
+  const isPod = order.payment_method === 'PAY_ON_DELIVERY' || order.payment_method === 'PAY_LATER' || !!order.metadata?.pay_on_delivery;
+  const isPendingPayment = (order.payment_status === 'PENDING' || order.payment_method === 'PAY_ON_DELIVERY' || order.payment_method === 'PAY_LATER') && order.payment_status !== 'PAID';
+
+  const paymentInfo = getPaymentDisplayInfo(order);
+
+  // Compute station vs total order item counts (for station-specific KDS tabs)
+  const allOrderItems = safeParseItems(order.items);
+  const totalOrderPieces = allOrderItems.reduce((s: number, i: any) => s + (Number(i.quantity) || 1), 0);
+  const stationPieces = (items || []).reduce((s: number, i: any) => s + (Number(i.quantity) || 1), 0);
+  const isPartialStation = totalOrderPieces > stationPieces;
+
+  const [settledMode, setSettledMode] = useState<string | null>(order.metadata?.settled_payment_mode || null);
+  const [settling, setSettling] = useState(false);
+  const [showDeliverySettleModal, setShowDeliverySettleModal] = useState(false);
+
+  const handleSettle = async (mode: 'CASH' | 'UPI', autoDeliverAfter = false) => {
+    if (settling) return;
+    if (!autoDeliverAfter) {
+      const confirmSettle = window.confirm(
+        `Confirm settlement of ₹${Number(order.total_amount).toFixed(2)} for Order #${displayOrderId} via ${mode}?`
+      );
+      if (!confirmSettle) return;
+    }
+
+    setSettling(true);
+    try {
+      const isStaffOrder = Boolean(order.staff_id);
+      const finalPaymentMethod = isStaffOrder 
+        ? (mode === 'CASH' ? 'POS_CASH' : 'POS_UPI') 
+        : (mode === 'CASH' ? 'CASH' : 'UPI');
+
+      const updatedMetadata = {
+        ...(order.metadata || {}),
+        original_payment_method: order.metadata?.original_payment_method || order.payment_method,
+        pay_on_delivery: true,
+        settled_payment_mode: mode,
+        settled_at: new Date().toISOString(),
+        settled_by: user?.id || null,
+        settled_by_name: user?.full_name || user?.name || user?.email || 'Staff',
+        settled_by_code: user?.employee_code || (user?.id ? 'EMP-' + user.id.substring(0, 6).toUpperCase() : 'STAFF'),
+        settled_cash: mode === 'CASH' ? Number(order.total_amount) : 0,
+        settled_upi: mode === 'UPI' ? Number(order.total_amount) : 0
+      };
+
+      const updateData: any = {
+        payment_status: 'PAID',
+        payment_method: finalPaymentMethod,
+        metadata: updatedMetadata
+      };
+
+      if (mode === 'CASH') {
+        updateData.collected_cash = Number(order.total_amount);
+        updateData.return_cash = 0;
+      }
+
+      const { error } = await supabase
+        .from('orders')
+        .update(updateData)
+        .eq('id', order.id);
+
+      if (error) throw error;
+      setSettledMode(mode);
+      setShowDeliverySettleModal(false);
+
+      if (onSettleSuccess) {
+        onSettleSuccess(order.id, finalPaymentMethod, updatedMetadata);
+      }
+
+      if (autoDeliverAfter) {
+        onAction();
+      }
+    } catch (err: any) {
+      console.error("Failed to settle order:", err);
+      alert("Settlement failed: " + (err.message || 'Unknown error'));
+    } finally {
+      setSettling(false);
+    }
+  };
 
   // Compute collected and returned amounts
   const rawCollected = (order as any).collected_cash ?? order.metadata?.collected_cash ?? (isPosSplit ? order.metadata?.split_collected_cash : undefined);
@@ -956,16 +1870,39 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
 
   return (
     <div 
-      className={`glass-card kds-order-card ${urgency.className}`} 
+      className={`glass-card kds-order-card ${urgency.className} ${isPinned ? 'kds-card-pinned' : ''}`} 
       style={{ 
-        borderLeft: `4px solid ${urgency.color}`, 
-        boxShadow: urgency.glow,
+        borderLeft: isPinned ? '5px solid #f59e0b' : `4px solid ${urgency.color}`, 
+        boxShadow: isPinned 
+          ? (urgency.glow !== 'none' ? `${urgency.glow}, 0 0 16px rgba(245, 158, 11, 0.45)` : '0 0 16px rgba(245, 158, 11, 0.35)') 
+          : urgency.glow,
+        borderTop: isPinned ? '1px solid rgba(245, 158, 11, 0.45)' : undefined,
+        borderRight: isPinned ? '1px solid rgba(245, 158, 11, 0.45)' : undefined,
+        borderBottom: isPinned ? '1px solid rgba(245, 158, 11, 0.45)' : undefined,
+        background: isPinned ? 'linear-gradient(180deg, rgba(245, 158, 11, 0.08) 0%, rgba(18, 20, 29, 0.95) 100%)' : undefined,
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', width: '100%' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap' }}>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>#{displayOrderId}</div>
+            {isPinned && (
+              <span style={{ 
+                fontSize: '9px', 
+                fontWeight: 800, 
+                padding: '2px 7px', 
+                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(217, 119, 6, 0.35) 100%)', 
+                color: '#fbbf24', 
+                borderRadius: '4px', 
+                border: '1px solid #f59e0b',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                letterSpacing: '0.5px'
+              }}>
+                <Pin size={10} style={{ transform: 'rotate(-45deg)' }} /> PINNED
+              </span>
+            )}
             {urgency.badge && (
               <span style={{ fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', background: `${urgency.color}20`, color: urgency.color, borderRadius: '4px', border: `1px solid ${urgency.color}40`, whiteSpace: 'nowrap' }}>
                 {urgency.badge.toUpperCase()}
@@ -983,25 +1920,63 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', width: '100%' }}>
-        <div style={{ 
-          fontSize: '11px', 
-          background: 'rgba(255,255,255,0.05)', 
-          padding: '2px 8px', 
-          borderRadius: '4px', 
-          color: 'var(--text-muted)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          minWidth: 0,
-          flexShrink: 1
-        }}>
-          {order.payment_method === 'POS_SPLIT' 
-            ? (order.metadata?.split_cash !== undefined 
-                ? `SPLIT (₹${order.metadata.split_cash} Cash + ₹${order.metadata.split_upi} UPI)`
-                : 'SPLIT (CASH + UPI)')
-            : order.payment_method?.replace('DEMO_', '').replace('_', ' ')}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flexWrap: 'wrap' }}>
+          <div style={{ 
+            fontSize: '11px', 
+            fontWeight: 700,
+            background: paymentInfo.bg, 
+            border: paymentInfo.border,
+            padding: '2px 8px', 
+            borderRadius: '5px', 
+            color: paymentInfo.color,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            minWidth: 0,
+            flexShrink: 1,
+            letterSpacing: '0.2px'
+          }}>
+            {paymentInfo.label}
+          </div>
+          {isPartialStation && (
+            <span style={{ 
+              fontSize: '10px', 
+              fontWeight: 800, 
+              background: 'rgba(255, 152, 0, 0.15)', 
+              border: '1px solid rgba(255, 152, 0, 0.35)', 
+              color: '#fbbf24', 
+              padding: '2px 6px', 
+              borderRadius: '5px',
+              whiteSpace: 'nowrap'
+            }}>
+              Station: {stationPieces}/{totalOrderPieces} items
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          {onTogglePin && (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePin(order.id);
+              }} 
+              title={isPinned ? "Unpin order (my terminal only)" : "Pin order to top (my terminal only)"}
+              style={{ 
+                background: isPinned ? 'rgba(245, 158, 11, 0.25)' : 'rgba(255,255,255,0.05)', 
+                border: isPinned ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.08)', 
+                color: isPinned ? '#fbbf24' : 'var(--text-muted)', 
+                padding: '6px 8px', 
+                borderRadius: '8px', 
+                cursor: 'pointer', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '4px',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <Pin size={14} style={{ transform: isPinned ? 'rotate(0deg)' : 'rotate(45deg)', fill: isPinned ? '#fbbf24' : 'none' }} />
+            </button>
+          )}
           <button 
             onClick={() => setShowUser(!showUser)} 
             style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: showUser ? 'var(--accent-gold)' : 'var(--text-muted)', padding: '6px 8px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -1017,6 +1992,126 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
           </button>
         </div>
       </div>
+
+      {/* Pay on Delivery / Unpaid Alert & Direct Settlement Box on KDS Tile */}
+      {(isPendingPayment && !settledMode && order.payment_status !== 'PAID') && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.16) 0%, rgba(245, 158, 11, 0.16) 100%)',
+          border: '1.5px solid #ef4444',
+          borderRadius: '10px',
+          padding: '8px 10px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          width: '100%',
+          boxSizing: 'border-box'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{
+                background: '#dc2626',
+                color: '#fff',
+                fontSize: '10px',
+                fontWeight: 900,
+                padding: '2px 6px',
+                borderRadius: '4px',
+                letterSpacing: '0.5px'
+              }}>
+                UNPAID
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: 800, color: '#fca5a5' }}>
+                Collect at Delivery ({paymentInfo.shortLabel})
+              </span>
+            </div>
+            <span style={{ fontSize: '14px', fontWeight: 900, color: '#ffffff' }}>
+              ₹{Number(order.total_amount).toFixed(2)}
+            </span>
+          </div>
+
+          {/* Settle Action Buttons */}
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              type="button"
+              disabled={settling}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSettle('CASH');
+              }}
+              style={{
+                flex: 1,
+                padding: '7px 8px',
+                borderRadius: '8px',
+                border: '1px solid rgba(34, 197, 94, 0.5)',
+                background: 'rgba(34, 197, 94, 0.25)',
+                color: '#4ade80',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: settling ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                transition: 'all 0.15s'
+              }}
+            >
+              <CheckCircle size={13} />
+              <span>Settle Cash</span>
+            </button>
+            <button
+              type="button"
+              disabled={settling}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSettle('UPI');
+              }}
+              style={{
+                flex: 1,
+                padding: '7px 8px',
+                borderRadius: '8px',
+                border: '1px solid rgba(0, 210, 255, 0.5)',
+                background: 'rgba(0, 210, 255, 0.25)',
+                color: '#38bdf8',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: settling ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                transition: 'all 0.15s'
+              }}
+            >
+              <CheckCircle size={13} />
+              <span>Settle UPI</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Settled Badge if POD order was settled */}
+      {(settledMode || (order.payment_status === 'PAID' && (isPod || order.metadata?.settled_payment_mode))) && (
+        <div style={{
+          background: 'rgba(34, 197, 94, 0.12)',
+          border: '1px solid rgba(34, 197, 94, 0.35)',
+          borderRadius: '8px',
+          padding: '5px 10px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          width: '100%',
+          boxSizing: 'border-box'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <CheckCircle size={13} color="#4ade80" />
+            <span style={{ fontSize: '11px', fontWeight: 800, color: '#4ade80' }}>
+              SETTLED ({settledMode ? (paymentInfo.channel === 'POS' ? `POS ${settledMode === 'CASH' ? 'Cash' : 'UPI'}` : `APP ${settledMode === 'CASH' ? 'Cash' : 'UPI'}`) : paymentInfo.label})
+            </span>
+          </div>
+          <span style={{ fontSize: '12px', fontWeight: 900, color: '#ffffff' }}>
+            ₹{Number(order.total_amount).toFixed(2)}
+          </span>
+        </div>
+      )}
 
       {/* POS Cash Collected, Returned & Diff (Bill) Strip */}
       {showCashInfo && (
@@ -1170,7 +2265,7 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
               )}
               {item.addons && item.addons.length > 0 && (
                 <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px', paddingLeft: '8px', borderLeft: '2px solid rgba(255,255,255,0.2)' }}>
-                  {item.addons.flatMap((a: any) => a.selectedOptions).map((opt: any, i: number) => (
+                  {item.addons.flatMap((a: any) => (a.selectedOptions || a.options || [])).filter(Boolean).map((opt: any, i: number) => (
                     <div key={i}>+ {opt.name}</div>
                   ))}
                 </div>
@@ -1178,10 +2273,30 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
             </div>
           );
         })}
+        {isPartialStation && (
+          <div style={{ 
+            fontSize: '11px', 
+            color: '#fbbf24', 
+            background: 'rgba(255, 184, 0, 0.08)',
+            border: '1px dashed rgba(255, 184, 0, 0.25)',
+            borderRadius: '6px',
+            padding: '5px 8px',
+            marginTop: '8px', 
+            textAlign: 'center' 
+          }}>
+            +{totalOrderPieces - stationPieces} other item(s) in this order routed to other station KDS
+          </div>
+        )}
       </div>
 
       <button 
-        onClick={onAction} 
+        onClick={() => {
+          if (isPendingPayment && !settledMode && order.payment_status !== 'PAID' && actionLabel === 'All Delivered') {
+            setShowDeliverySettleModal(true);
+            return;
+          }
+          onAction();
+        }} 
         style={{ 
             width: '100%', 
             padding: '12px', 
@@ -1195,6 +2310,190 @@ function OrderCard({ order, hasUnread, onAction, onChat, onToggleItem, actionLab
         }}>
         <CheckCircle size={18} /> {actionLabel}
       </button>
+
+      {/* Pay on Delivery Settlement & Verification Modal */}
+      {showDeliverySettleModal && (
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '16px'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(145deg, #181824 0%, #101018 100%)',
+              border: '1.5px solid rgba(255, 179, 106, 0.35)',
+              borderRadius: '18px',
+              padding: '24px',
+              maxWidth: '420px',
+              width: '100%',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.8), 0 0 30px rgba(255, 179, 106, 0.15)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              color: 'white',
+              boxSizing: 'border-box'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  color: '#f87171',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  letterSpacing: '0.5px'
+                }}>
+                  PAY ON DELIVERY
+                </span>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-muted)' }}>
+                  #{displayOrderId}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeliverySettleModal(false)}
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  borderRadius: '50%',
+                  width: '28px',
+                  height: '28px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '14px',
+                  fontWeight: 'bold'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '18px', fontWeight: 900, color: '#ffffff' }}>
+                Verify Payment Collection
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+                This order was placed as Pay on Delivery. Confirm how the customer paid the runner to complete delivery:
+              </div>
+            </div>
+
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Location</div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#fff', marginTop: '2px' }}>{order.location}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Amount</div>
+                <div style={{ fontSize: '18px', fontWeight: 900, color: 'var(--accent-gold)', marginTop: '1px' }}>
+                  ₹{Number(order.total_amount).toFixed(2)}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+              <button
+                type="button"
+                disabled={settling}
+                onClick={() => handleSettle('CASH', true)}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  border: '1.5px solid rgba(34, 197, 94, 0.6)',
+                  background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.25) 0%, rgba(34, 197, 94, 0.15) 100%)',
+                  color: '#4ade80',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: settling ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  boxShadow: '0 4px 15px rgba(34, 197, 94, 0.15)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CheckCircle size={16} />
+                  <span>Collected via Cash</span>
+                </div>
+                <span style={{ fontWeight: 900 }}>₹{Number(order.total_amount).toFixed(2)}</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={settling}
+                onClick={() => handleSettle('UPI', true)}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  border: '1.5px solid rgba(0, 210, 255, 0.6)',
+                  background: 'linear-gradient(135deg, rgba(0, 210, 255, 0.25) 0%, rgba(0, 210, 255, 0.15) 100%)',
+                  color: '#38bdf8',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: settling ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  boxShadow: '0 4px 15px rgba(0, 210, 255, 0.15)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CheckCircle size={16} />
+                  <span>Collected via UPI</span>
+                </div>
+                <span style={{ fontWeight: 900 }}>₹{Number(order.total_amount).toFixed(2)}</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowDeliverySettleModal(false)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-muted)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'center'
+              }}
+            >
+              Cancel & Keep in Queue
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

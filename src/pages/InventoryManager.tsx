@@ -194,15 +194,32 @@ export default function InventoryManager({ user }: { user: any }) {
     try {
       if (editingItem) {
         // Edit Item
+        const oldStock = Number(editingItem.stock_quantity) || 0;
+        const newStock = isNaN(qty) ? 0 : qty;
+        const stockDiff = Number((newStock - oldStock).toFixed(4));
+        const itemCinemaId = editingItem.cinema_id || selectedCinemaId;
+
         const { error } = await supabase.from('inventory_items').update({
           item_name: itemFormData.item_name,
           sku: itemFormData.sku,
-          stock_quantity: qty,
+          stock_quantity: newStock,
           unit: itemFormData.unit,
           min_stock_level: minLvl,
           updated_at: new Date().toISOString()
         }).eq('id', editingItem.id);
         if (error) throw error;
+
+        // If stock was manually changed during edit, log to inventory_transactions as ADMIN Changes
+        if (stockDiff !== 0) {
+          const userIdentifier = user?.full_name || user?.name || user?.email || 'Admin';
+          await supabase.from('inventory_transactions').insert({
+            cinema_id: itemCinemaId,
+            inventory_item_id: editingItem.id,
+            quantity_changed: stockDiff,
+            transaction_type: 'MANUAL_ADJUSTMENT',
+            description: `ADMIN Changes: Stock manually edited from ${oldStock} to ${newStock} by ${userIdentifier}`
+          });
+        }
       } else {
         // Add Item
         const { data, error } = await supabase.from('inventory_items').insert({
@@ -730,10 +747,19 @@ export default function InventoryManager({ user }: { user: any }) {
                             SALE DEDUCT
                           </span>
                         );
-                      } else if (tx.transaction_type === 'MANUAL_ADJUSTMENT') {
+                      } else if (tx.transaction_type === 'MANUAL_ADJUSTMENT' || (tx.transaction_type as string) === 'ADMIN_CHANGE' || (tx.transaction_type as string) === 'ADMIN_CHANGES') {
+                        const isAdminChange = (tx.transaction_type as string).startsWith('ADMIN') || tx.description?.toUpperCase().includes('ADMIN') || tx.description?.toLowerCase().includes('initial stock');
                         typeBadge = (
-                          <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: 'rgba(255,159,67,0.1)', color: '#ff9f43' }}>
-                            ADJUSTMENT
+                          <span style={{ 
+                            padding: '3px 8px', 
+                            borderRadius: 6, 
+                            fontSize: 11, 
+                            fontWeight: 700, 
+                            background: isAdminChange ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255,159,67,0.1)', 
+                            color: isAdminChange ? '#c084fc' : '#ff9f43',
+                            border: isAdminChange ? '1px solid rgba(168, 85, 247, 0.3)' : 'none'
+                          }}>
+                            {isAdminChange ? 'ADMIN CHANGES' : 'ADJUSTMENT'}
                           </span>
                         );
                       }
@@ -822,7 +848,14 @@ export default function InventoryManager({ user }: { user: any }) {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 6, fontWeight: 600 }}>Initial Stock</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                      <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Initial Stock</label>
+                      {editingItem && (
+                        <span style={{ fontSize: 10, color: '#c084fc', fontWeight: 600 }}>
+                          Resets baseline
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="number"
                       step="any"
@@ -831,8 +864,13 @@ export default function InventoryManager({ user }: { user: any }) {
                       className="input-premium"
                       required
                       min="0"
-                      disabled={!!editingItem} // Disable stock modification directly from edit; use Stock In instead
+                      placeholder="0"
                     />
+                    {editingItem && (
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, lineHeight: '1.3' }}>
+                        Changing this resets current stock; future order deductions will start from this value.
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 6, fontWeight: 600 }}>Min Stock Alert</label>

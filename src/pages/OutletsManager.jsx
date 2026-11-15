@@ -1,18 +1,21 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
-import { Plus, MapPin, Film, Star, Edit2, Trash2, Image as ImageIcon, Save, X, Search, Upload, Loader2, Power, CheckCircle2, AlertTriangle, Activity } from 'lucide-react';
+import { Plus, MapPin, Film, Star, Edit2, Trash2, Image as ImageIcon, Save, X, Search, Upload, Loader2, Power, CheckCircle2, AlertTriangle, Activity, AlertCircle } from 'lucide-react';
+import { compressImage, validateImageUrl } from '../lib/imageUtils';
 
 export default function OutletsManager() {
   const [cinemas, setCinemas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [imageWarning, setImageWarning] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
   const [actionToast, setActionToast] = useState(null);
   
-  // Form State (Side Panel)
+  // Form State (Side Panel / Mobile Modal)
   const [isEditing, setIsEditing] = useState(false);
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [currentId, setCurrentId] = useState(null);
   const [formData, setFormData] = useState({ 
     name: '', 
@@ -23,7 +26,11 @@ export default function OutletsManager() {
     loginEmail: '',
     loginPassword: '',
     outletNumber: '',
-    isActive: true
+    isActive: true,
+    // Geo-fence fields
+    latitude: '',
+    longitude: '',
+    geoRadiusMeters: '300',
   });
   const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
 
@@ -44,9 +51,11 @@ export default function OutletsManager() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', location: '', feature: '', imageUrl: '', screens: [], loginEmail: '', loginPassword: '', outletNumber: '', isActive: true });
+    setFormData({ name: '', location: '', feature: '', imageUrl: '', screens: [], loginEmail: '', loginPassword: '', outletNumber: '', isActive: true, latitude: '', longitude: '', geoRadiusMeters: '300' });
     setIsEditing(false);
     setCurrentId(null);
+    setImageWarning(null);
+    setIsFormModalOpen(false);
   };
 
   const handleOpenEdit = (cinema) => {
@@ -57,12 +66,38 @@ export default function OutletsManager() {
         imageUrl: cinema.image_url || '',
         screens: cinema.screens || [],
         loginEmail: cinema.login_email || '',
-        loginPassword: '',
+        loginPassword: cinema.login_password || '',
         outletNumber: cinema.outlet_number || '',
-        isActive: cinema.is_active !== false
+        isActive: cinema.is_active !== false,
+        latitude: cinema.latitude != null ? String(cinema.latitude) : '',
+        longitude: cinema.longitude != null ? String(cinema.longitude) : '',
+        geoRadiusMeters: cinema.geo_radius_meters != null ? String(cinema.geo_radius_meters) : '300',
     });
+    const check = validateImageUrl(cinema.image_url || '');
+    setImageWarning(check.warning || null);
     setIsEditing(true);
     setCurrentId(cinema.id);
+    setIsFormModalOpen(true);
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setFormData(prev => ({
+          ...prev,
+          latitude: pos.coords.latitude.toFixed(6),
+          longitude: pos.coords.longitude.toFixed(6)
+        }));
+      },
+      (err) => {
+        alert("Could not retrieve GPS coordinates: " + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   const handleToggleStatus = async (cinema, e) => {
@@ -122,18 +157,22 @@ export default function OutletsManager() {
   };
 
   const handleFileUpload = async (e) => {
-    try {
-      const file = e.target.files?.[0];
-      if (!file) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
 
+    try {
       setUploading(true);
-      const fileExt = file.name.split('.').pop();
+      setImageWarning(null);
+
+      // Auto-compress high-res camera/phone photos to max 1200px at ~150KB
+      const compressedFile = await compressImage(file, { maxWidth: 1200, maxHeight: 1200, quality: 0.82 });
+      const fileExt = compressedFile.name.split('.').pop() || 'jpg';
       const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
       const filePath = `cinemas/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('images')
-        .upload(filePath, file, {
+        .upload(filePath, compressedFile, {
             cacheControl: '0',
             upsert: true
         });
@@ -144,13 +183,14 @@ export default function OutletsManager() {
         .from('images')
         .getPublicUrl(filePath);
 
-      console.log('Successfully uploaded outlet image. Public URL:', publicUrl);
+      console.log('Successfully uploaded compressed outlet image. Public URL:', publicUrl);
       setFormData(prev => ({ ...prev, imageUrl: publicUrl }));
     } catch (error) {
       console.error('Upload error:', error);
       alert('Error uploading image: ' + error.message);
     } finally {
       setUploading(false);
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -170,6 +210,20 @@ export default function OutletsManager() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (uploading) {
+      alert("Please wait for the image upload to finish before saving.");
+      return;
+    }
+
+    if (formData.imageUrl) {
+      const check = validateImageUrl(formData.imageUrl);
+      if (!check.isValid) {
+        alert(check.warning || "Please enter a valid image URL.");
+        return;
+      }
+    }
+
     setLoading(true);
     
     if (formData.loginEmail && formData.loginPassword) {
@@ -191,9 +245,14 @@ export default function OutletsManager() {
     if (isEditing) {
         const { error } = await supabase.from('cinemas').update({ 
             name: formData.name, location: formData.location, feature: formData.feature, image_url: formData.imageUrl,
-            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null,
+            login_email: formData.loginEmail || null,
+            login_password: formData.loginPassword || null,
+            outlet_number: formData.outletNumber || null,
             is_active: formData.isActive !== false,
-            status: formData.isActive !== false ? 'ACTIVE' : 'INACTIVE'
+            status: formData.isActive !== false ? 'ACTIVE' : 'INACTIVE',
+            latitude: formData.latitude !== '' ? parseFloat(formData.latitude) : null,
+            longitude: formData.longitude !== '' ? parseFloat(formData.longitude) : null,
+            geo_radius_meters: formData.geoRadiusMeters !== '' ? parseInt(formData.geoRadiusMeters) : 300,
         }).eq('id', currentId);
         
         if (error) alert(error.message);
@@ -241,9 +300,14 @@ export default function OutletsManager() {
 
         const { data: cinema, error: cinemaErr } = await supabase.from('cinemas').insert([{ 
             name: formData.name, location: formData.location, feature: formData.feature, image_url: formData.imageUrl,
-            login_email: formData.loginEmail || null, outlet_number: formData.outletNumber || null,
+            login_email: formData.loginEmail || null, 
+            login_password: formData.loginPassword || null,
+            outlet_number: formData.outletNumber || null,
             is_active: formData.isActive !== false,
-            status: formData.isActive !== false ? 'ACTIVE' : 'INACTIVE'
+            status: formData.isActive !== false ? 'ACTIVE' : 'INACTIVE',
+            latitude: formData.latitude !== '' ? parseFloat(formData.latitude) : null,
+            longitude: formData.longitude !== '' ? parseFloat(formData.longitude) : null,
+            geo_radius_meters: formData.geoRadiusMeters !== '' ? parseInt(formData.geoRadiusMeters) : 300,
         }]).select().single();
 
         if (cinemaErr) alert(cinemaErr.message);
@@ -288,19 +352,297 @@ export default function OutletsManager() {
   const activeCount = cinemas.filter(c => c.is_active !== false).length;
   const inactiveCount = cinemas.filter(c => c.is_active === false).length;
 
+  const renderOutletForm = () => (
+    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
+        <div className="input-group">
+          <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Identity</label>
+          <input className="input-premium" placeholder="Outlet Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+        </div>
+        <div className="input-group">
+          <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Outlet #</label>
+          <input className="input-premium" placeholder="e.g. 101" value={formData.outletNumber} onChange={e => setFormData({...formData, outletNumber: e.target.value})} />
+        </div>
+      </div>
+
+      <div className="input-group">
+        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Location</label>
+        <input className="input-premium" placeholder="City / Mall" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} required />
+      </div>
+
+      <div className="input-group">
+        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Outlet Image</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ 
+            height: '120px', 
+            width: '100%', 
+            borderRadius: '12px', 
+            background: 'rgba(255,255,255,0.02)', 
+            border: '1px dashed rgba(255,255,255,0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            position: 'relative'
+          }}>
+            {uploading ? (
+              <Loader2 className="animate-spin" size={24} color="var(--primary-red)" />
+            ) : formData.imageUrl ? (
+              <img src={formData.imageUrl.trim()} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400'; }} />
+            ) : (
+              <div style={{ textAlign: 'center', opacity: 0.4 }}>
+                <ImageIcon size={24} style={{ marginBottom: '8px' }} />
+                <div style={{ fontSize: '10px' }}>No Image Selected</div>
+              </div>
+            )}
+            <input 
+              type="file" 
+              accept="image/*" 
+              onChange={handleFileUpload} 
+              style={{ 
+                position: 'absolute', 
+                top: 0, 
+                left: 0, 
+                width: '100%', 
+                height: '100%', 
+                opacity: 0, 
+                cursor: 'pointer' 
+              }} 
+            />
+          </div>
+          <input 
+            className="input-premium" 
+            placeholder="OR Enter Image URL (https://...)" 
+            value={formData.imageUrl} 
+            onChange={e => {
+              const val = e.target.value.trim();
+              setFormData(prev => ({ ...prev, imageUrl: val }));
+              const check = validateImageUrl(val);
+              setImageWarning(check.warning || null);
+            }} 
+          />
+          {imageWarning && (
+            <div style={{ fontSize: '11px', color: '#ffb36a', marginTop: '4px', display: 'flex', alignItems: 'flex-start', gap: '6px', background: 'rgba(255, 179, 106, 0.08)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255, 179, 106, 0.2)' }}>
+              <AlertCircle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>{imageWarning}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="input-group">
+        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Feature</label>
+        <input className="input-premium" placeholder="e.g. 4DX" value={formData.feature} onChange={e => setFormData({...formData, feature: e.target.value})} />
+      </div>
+      
+      <div className="input-group">
+        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Screens ({formData.screens.length})</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {formData.screens.map((screen, index) => (
+            <div key={index} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input className="input-premium" style={{ flex: 1, padding: '10px 12px' }} placeholder="Name (e.g. Hall 1)" value={screen.name} onChange={e => handleScreenChange(index, 'name', e.target.value)} required />
+              <input className="input-premium" style={{ flex: 1, padding: '10px 12px' }} placeholder="Tag (e.g. IMAX)" value={screen.tag} onChange={e => handleScreenChange(index, 'tag', e.target.value)} />
+              <button type="button" onClick={() => handleRemoveScreen(index)} style={{ background: 'rgba(211,47,47,0.2)', color: '#ff6b6b', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={16} /></button>
+            </div>
+          ))}
+          <button type="button" onClick={handleAddScreen} style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', marginTop: '4px' }}>
+            <Plus size={14} /> ADD SCREEN
+          </button>
+        </div>
+      </div>
+
+      <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '20px', marginTop: '4px' }}>
+        <div style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '16px', letterSpacing: '1.5px' }}>Outlet Login Credentials</div>
+        <div className="input-group" style={{ marginBottom: '16px' }}>
+          <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Authorized Login Email</label>
+          <input type="email" className="input-premium" placeholder="outlet@lovecafe.com" value={formData.loginEmail} onChange={e => setFormData({...formData, loginEmail: e.target.value})} />
+        </div>
+        <div className="input-group" style={{ marginBottom: '16px' }}>
+          <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Login Password <span style={{ textTransform: 'none', fontWeight: 'normal', color: 'rgba(255,255,255,0.25)' }}>(visible to superadmin)</span></label>
+          <input type="text" className="input-premium" placeholder="Enter outlet password..." value={formData.loginPassword} onChange={e => setFormData({...formData, loginPassword: e.target.value})} />
+        </div>
+      </div>
+
+      {/* ── GEO-FENCE CONFIGURATION ── */}
+      <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(16,185,129,0.8)', letterSpacing: '1.5px' }}>📍 Geo-Fence (COD Lock)</div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              style={{ fontSize: '10px', color: '#10b981', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', padding: '3px 8px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              📍 My GPS
+            </button>
+            <a
+              href="https://maps.google.com"
+              target="_blank"
+              rel="noreferrer"
+              style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', textDecoration: 'none', border: '1px solid rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '6px' }}
+            >
+              Maps ↗
+            </a>
+          </div>
+        </div>
+        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', marginBottom: '16px' }}>
+          COD orders are blocked if customer GPS is outside the radius. Tap "My GPS" if on-site or get coords from Google Maps.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div className="input-group">
+            <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', marginBottom: '6px', display: 'block' }}>Latitude</label>
+            <input
+              className="input-premium"
+              type="number"
+              step="0.000001"
+              placeholder="e.g. 12.971599"
+              value={formData.latitude}
+              onChange={e => setFormData({...formData, latitude: e.target.value})}
+            />
+          </div>
+          <div className="input-group">
+            <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', marginBottom: '6px', display: 'block' }}>Longitude</label>
+            <input
+              className="input-premium"
+              type="number"
+              step="0.000001"
+              placeholder="e.g. 77.594566"
+              value={formData.longitude}
+              onChange={e => setFormData({...formData, longitude: e.target.value})}
+            />
+          </div>
+        </div>
+        <div className="input-group">
+          <label style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', marginBottom: '6px', display: 'block' }}>Allowed Radius (meters)</label>
+          <input
+            className="input-premium"
+            type="number"
+            min="50"
+            max="2000"
+            step="50"
+            placeholder="300"
+            value={formData.geoRadiusMeters}
+            onChange={e => setFormData({...formData, geoRadiusMeters: e.target.value})}
+          />
+          <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.2)', marginTop: '6px' }}>
+            Recommended: 150–300m (strictly inside building). Parking = ~200m+.
+          </div>
+        </div>
+      </div>
+
+      <div style={{ 
+        borderTop: '1px solid rgba(255,255,255,0.08)', 
+        padding: '16px',
+        borderRadius: '12px',
+        background: formData.isActive ? 'rgba(16, 185, 129, 0.05)' : 'rgba(245, 158, 11, 0.05)',
+        border: formData.isActive ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(245, 158, 11, 0.2)',
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        marginTop: '4px'
+      }}>
+        <div>
+          <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>Operational Status</span>
+            <span style={{
+              fontSize: '10px',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              fontWeight: '900',
+              background: formData.isActive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+              color: formData.isActive ? '#10b981' : '#f59e0b'
+            }}>
+              {formData.isActive ? 'ACTIVE' : 'SERVICE MODE'}
+            </span>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+            {formData.isActive ? 'Visible to customers & accepting orders' : 'Hidden from customers & orders paused'}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setFormData(prev => ({ ...prev, isActive: !prev.isActive }))}
+          style={{
+            width: '48px',
+            height: '26px',
+            borderRadius: '13px',
+            background: formData.isActive ? '#10b981' : 'rgba(255,255,255,0.2)',
+            border: 'none',
+            cursor: 'pointer',
+            position: 'relative',
+            transition: 'background-color 0.2s',
+            padding: 0
+          }}
+          title={formData.isActive ? "Switch to Service Mode" : "Switch to Active"}
+        >
+          <span style={{
+            position: 'absolute',
+            top: '3px',
+            left: formData.isActive ? '25px' : '3px',
+            width: '20px',
+            height: '20px',
+            borderRadius: '50%',
+            background: 'white',
+            transition: 'left 0.2s ease',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+          }} />
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+        {isEditing && (
+          <button 
+            type="button" 
+            onClick={resetForm} 
+            style={{ flex: 1, padding: '16px', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            CANCEL
+          </button>
+        )}
+        <button 
+          type="submit" 
+          className="btn-lucrative" 
+          style={{ 
+            flex: 2, 
+            padding: '16px',
+            opacity: ((!isEditing && cinemas.length >= 5) || uploading || loading) ? 0.5 : 1,
+            cursor: ((!isEditing && cinemas.length >= 5) || uploading || loading) ? 'not-allowed' : 'pointer'
+          }}
+          disabled={(!isEditing && cinemas.length >= 5) || uploading || loading}
+        >
+          {uploading ? (
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <Loader2 className="animate-spin" size={16} />
+              <span>UPLOADING IMAGE...</span>
+            </span>
+          ) : isEditing ? 'SAVE CHANGES' : (cinemas.length >= 5 ? 'LIMIT REACHED' : 'CREATE OUTLET')}
+        </button>
+      </div>
+    </form>
+  );
+
   return (
-    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '32px', height: 'calc(100vh - 120px)' }}>
+    <div className="animate-fade-in admin-page-container">
       <header className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h1 style={{ fontSize: '32px', marginBottom: '8px', fontWeight: '900', letterSpacing: '-1.5px' }}>Cinema Network</h1>
           <p style={{ color: 'var(--text-secondary)' }}>Expand and monitor your global cinematic footprint.</p>
         </div>
+        <button 
+          type="button" 
+          onClick={() => { resetForm(); setIsFormModalOpen(true); }}
+          className="btn-lucrative"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 20px', borderRadius: '14px', fontWeight: 'bold', fontSize: '13px' }}
+        >
+          <Plus size={18} />
+          <span>DEPLOY OUTLET</span>
+        </button>
       </header>
 
-      <div className="dashboard-grid" style={{ display: 'flex', gap: '32px', flex: 1, minHeight: 0 }}>
+      <div className="admin-split-layout">
         
         {/* Left: Search, Filters & Cards */}
-        <div style={{ flex: 1.8, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className="admin-split-main">
             {actionToast && (
                 <div style={{
                     padding: '12px 20px',
@@ -449,11 +791,28 @@ export default function OutletsManager() {
                                     <div style={{ marginTop: '12px', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                                         <div style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.25)', marginBottom: '4px', fontWeight: '800' }}>Outlet Login</div>
                                         <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{cinema.login_email}</div>
+                                        {cinema.login_password && (
+                                            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', marginTop: '4px' }}>
+                                                Password: <span style={{ color: '#fff', fontWeight: 'bold' }}>{cinema.login_password}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                                 <div style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     <span style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}>{cinema.screens?.length || 0} Screens</span>
                                     {cinema.feature && <span style={{ background: 'rgba(255,47,146,0.1)', color: 'var(--primary-red)', padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}>{cinema.feature}</span>}
+                                    {/* Geo-fence status badge */}
+                                    <span style={{
+                                      background: cinema.latitude ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.04)',
+                                      color: cinema.latitude ? '#10b981' : 'rgba(255,255,255,0.3)',
+                                      padding: '4px 10px',
+                                      borderRadius: '8px',
+                                      fontSize: '11px',
+                                      fontWeight: 'bold',
+                                      border: cinema.latitude ? '1px solid rgba(16,185,129,0.25)' : '1px solid rgba(255,255,255,0.06)'
+                                    }}>
+                                      {cinema.latitude ? `📍 Geo: ${cinema.geo_radius_meters ?? 300}m` : '📍 No Geo'}
+                                    </span>
                                 </div>
 
                                 {/* 1-Click Operational Status Toggle Button */}
@@ -498,8 +857,8 @@ export default function OutletsManager() {
             </div>
         </div>
 
-        {/* Right: Detailed Form */}
-        <div style={{ width: '380px' }}>
+        {/* Right: Detailed Form for Desktop */}
+        <div className="admin-split-side desktop-only-side">
             <div className="glass-card animate-fade-in" style={{ padding: '32px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
@@ -520,185 +879,40 @@ export default function OutletsManager() {
                         </div>
                     )}
                 </div>
-
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
-                        <div className="input-group">
-                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Identity</label>
-                            <input className="input-premium" placeholder="Outlet Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
-                        </div>
-                        <div className="input-group">
-                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Outlet #</label>
-                            <input className="input-premium" placeholder="e.g. 101" value={formData.outletNumber} onChange={e => setFormData({...formData, outletNumber: e.target.value})} />
-                        </div>
-                    </div>
-
-                    <div className="input-group">
-                        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Location</label>
-                        <input className="input-premium" placeholder="City / Mall" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} required />
-                    </div>
-
-                    <div className="input-group">
-                        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Outlet Image</label>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          <div style={{ 
-                            height: '120px', 
-                            width: '100%', 
-                            borderRadius: '12px', 
-                            background: 'rgba(255,255,255,0.02)', 
-                            border: '1px dashed rgba(255,255,255,0.1)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            overflow: 'hidden',
-                            position: 'relative'
-                          }}>
-                            {uploading ? (
-                              <Loader2 className="animate-spin" size={24} color="var(--primary-red)" />
-                            ) : formData.imageUrl ? (
-                              <img src={formData.imageUrl.trim()} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400'; }} />
-                            ) : (
-                              <div style={{ textAlign: 'center', opacity: 0.4 }}>
-                                <ImageIcon size={24} style={{ marginBottom: '8px' }} />
-                                <div style={{ fontSize: '10px' }}>No Image Selected</div>
-                              </div>
-                            )}
-                            <input 
-                              type="file" 
-                              accept="image/*" 
-                              onChange={handleFileUpload} 
-                              style={{ 
-                                position: 'absolute', 
-                                top: 0, 
-                                left: 0, 
-                                width: '100%', 
-                                height: '100%', 
-                                opacity: 0, 
-                                cursor: 'pointer' 
-                              }} 
-                            />
-                          </div>
-                          <input 
-                            className="input-premium" 
-                            placeholder="OR Enter Image URL (https://...)" 
-                            value={formData.imageUrl} 
-                            onChange={e => setFormData({...formData, imageUrl: e.target.value.trim()})} 
-                          />
-                        </div>
-                    </div>
-
-                    <div className="input-group">
-                        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Feature</label>
-                        <input className="input-premium" placeholder="e.g. 4DX" value={formData.feature} onChange={e => setFormData({...formData, feature: e.target.value})} />
-                    </div>
-                    
-                    <div className="input-group">
-                        <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Screens ({formData.screens.length})</label>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {formData.screens.map((screen, index) => (
-                                <div key={index} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                    <input className="input-premium" style={{ flex: 1, padding: '10px 12px' }} placeholder="Name (e.g. Hall 1)" value={screen.name} onChange={e => handleScreenChange(index, 'name', e.target.value)} required />
-                                    <input className="input-premium" style={{ flex: 1, padding: '10px 12px' }} placeholder="Tag (e.g. IMAX)" value={screen.tag} onChange={e => handleScreenChange(index, 'tag', e.target.value)} />
-                                    <button type="button" onClick={() => handleRemoveScreen(index)} style={{ background: 'rgba(211,47,47,0.2)', color: '#ff6b6b', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={16} /></button>
-                                </div>
-                            ))}
-                            <button type="button" onClick={handleAddScreen} style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', marginTop: '4px' }}>
-                                <Plus size={14} /> ADD SCREEN
-                            </button>
-                        </div>
-                    </div>
-
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '20px', marginTop: '4px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '16px', letterSpacing: '1.5px' }}>Outlet Login Credentials</div>
-                        <div className="input-group" style={{ marginBottom: '16px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Authorized Login Email</label>
-                            <input type="email" className="input-premium" placeholder="outlet@lovecafe.com" value={formData.loginEmail} onChange={e => setFormData({...formData, loginEmail: e.target.value})} />
-                        </div>
-                        <div className="input-group" style={{ marginBottom: '16px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: '8px', display: 'block' }}>Login Password {isEditing && <span style={{ textTransform: 'none', fontWeight: 'normal', color: 'var(--text-secondary)' }}>(leave blank to keep current)</span>}</label>
-                            <input type="text" className="input-premium" placeholder="Set a secure password..." value={formData.loginPassword} onChange={e => setFormData({...formData, loginPassword: e.target.value})} />
-                        </div>
-                    </div>
-
-                    <div style={{ 
-                        borderTop: '1px solid rgba(255,255,255,0.08)', 
-                        padding: '16px',
-                        borderRadius: '12px',
-                        background: formData.isActive ? 'rgba(16, 185, 129, 0.05)' : 'rgba(245, 158, 11, 0.05)',
-                        border: formData.isActive ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(245, 158, 11, 0.2)',
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'space-between',
-                        marginTop: '4px'
-                    }}>
-                        <div>
-                            <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span>Operational Status</span>
-                                <span style={{
-                                    fontSize: '10px',
-                                    padding: '2px 8px',
-                                    borderRadius: '10px',
-                                    fontWeight: '900',
-                                    background: formData.isActive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                                    color: formData.isActive ? '#10b981' : '#f59e0b'
-                                }}>
-                                    {formData.isActive ? 'ACTIVE' : 'SERVICE MODE'}
-                                </span>
-                            </div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                                {formData.isActive ? 'Visible to customers & accepting orders' : 'Hidden from customers & orders paused'}
-                            </div>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setFormData(prev => ({ ...prev, isActive: !prev.isActive }))}
-                            style={{
-                                width: '48px',
-                                height: '26px',
-                                borderRadius: '13px',
-                                background: formData.isActive ? '#10b981' : 'rgba(255,255,255,0.2)',
-                                border: 'none',
-                                cursor: 'pointer',
-                                position: 'relative',
-                                transition: 'background-color 0.2s',
-                                padding: 0
-                            }}
-                            title={formData.isActive ? "Switch to Service Mode" : "Switch to Active"}
-                        >
-                            <span style={{
-                                position: 'absolute',
-                                top: '3px',
-                                left: formData.isActive ? '25px' : '3px',
-                                width: '20px',
-                                height: '20px',
-                                borderRadius: '50%',
-                                background: 'white',
-                                transition: 'left 0.2s ease',
-                                boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
-                            }} />
-                        </button>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
-                        {isEditing && <button type="button" onClick={resetForm} style={{ flex: 1, padding: '16px', background: 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '12px', fontWeight: 'bold' }}>CANCEL</button>}
-                        <button 
-                            type="submit" 
-                            className="btn-lucrative" 
-                            style={{ 
-                                flex: 2, 
-                                padding: '16px',
-                                opacity: (!isEditing && cinemas.length >= 5) ? 0.5 : 1,
-                                cursor: (!isEditing && cinemas.length >= 5) ? 'not-allowed' : 'pointer'
-                            }}
-                            disabled={!isEditing && cinemas.length >= 5}
-                        >
-                            {isEditing ? 'SAVE CHANGES' : (cinemas.length >= 5 ? 'LIMIT REACHED' : 'CREATE OUTLET')}
-                        </button>
-                    </div>
-                </form>
+                {renderOutletForm()}
             </div>
         </div>
       </div>
+
+      {/* Mobile Modal for Add / Edit Outlet */}
+      {isFormModalOpen && (
+        <div 
+          className="admin-mobile-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsFormModalOpen(false);
+              resetForm();
+            }
+          }}
+        >
+          <div className="admin-mobile-modal-card animate-scale-up">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+              <div>
+                <h2 style={{ fontSize: '20px', fontWeight: '900', margin: 0 }}>{isEditing ? 'Update Branch' : 'Deploy Outlet'}</h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '4px 0 0' }}>{isEditing ? 'Modifying existing node' : 'Initialize a new cinematic node'}</p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => { setIsFormModalOpen(false); resetForm(); }}
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '10px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {renderOutletForm()}
+          </div>
+        </div>
+      )}
 
       {/* Double Confirmation Modal */}
       {deleteConfirmationId && (

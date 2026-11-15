@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
 import { Plus, Trash2, Edit2, X, Loader2, Package, Upload, ToggleLeft, ToggleRight, ChevronDown } from 'lucide-react';
+import { compressImage } from '../lib/imageUtils';
 
 const COMBO_CATEGORIES = ['Snacks Combo', 'Family Combo', 'Beverage Combo', 'Premium Combo'];
 
@@ -41,7 +42,7 @@ export default function ComboManager({ user }: { user: any }) {
         await fetch(`${API_BASE_URL}/api/menu/invalidate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cinemaId: cinemaId || user?.cinema_id })
+            body: JSON.stringify({ cinemaId: cinemaId || user?.cinema_id || 'ALL' })
         });
     } catch (e) {
         console.error("Cache invalidation failed:", e);
@@ -91,18 +92,23 @@ export default function ComboManager({ user }: { user: any }) {
     const file = e.target.files?.[0]; if (!file) return;
     setUploading(true);
     try {
-      const ext = file.name.split('.').pop();
+      const compressedFile = await compressImage(file, { maxWidth: 1200, maxHeight: 1200, quality: 0.82 });
+      const ext = compressedFile.name.split('.').pop() || 'jpg';
       const path = `combos/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('images').upload(path, file, { cacheControl: '0', upsert: true });
+      const { error } = await supabase.storage.from('images').upload(path, compressedFile, { cacheControl: '0', upsert: true });
       if (error) throw error;
       const { data } = supabase.storage.from('images').getPublicUrl(path);
       setForm(prev => ({ ...prev, imageUrl: data.publicUrl }));
     } catch (err: any) { alert('Upload failed: ' + err.message); }
-    finally { setUploading(false); }
+    finally { 
+      setUploading(false);
+      if (e.target) e.target.value = '';
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (uploading) { alert('Please wait for the image upload to complete.'); return; }
     if (form.selectedItems.length === 0) { alert('Add at least one item to the combo.'); return; }
     // Duplicate check
     if (!isEditing) {
@@ -324,9 +330,32 @@ export default function ComboManager({ user }: { user: any }) {
               {/* Actions */}
               <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
                 {isEditing && <button type="button" onClick={resetForm} style={{ flex: 1, padding: '14px', background: 'rgba(255,255,255,0.05)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}><X size={16} /></button>}
-                <button type="submit" className="btn-lucrative" style={{ flex: 2, padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  {loading ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
-                  {isEditing ? 'UPDATE COMBO' : 'CREATE COMBO'}
+                <button 
+                  type="submit" 
+                  className="btn-lucrative" 
+                  style={{ 
+                    flex: 2, 
+                    padding: '14px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    gap: '8px',
+                    opacity: (loading || uploading) ? 0.6 : 1,
+                    cursor: (loading || uploading) ? 'not-allowed' : 'pointer'
+                  }}
+                  disabled={loading || uploading}
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} />
+                      <span>UPLOADING IMAGE...</span>
+                    </>
+                  ) : loading ? (
+                    <Loader2 className="animate-spin" size={16} />
+                  ) : (
+                    <Plus size={16} />
+                  )}
+                  {!uploading && (isEditing ? 'UPDATE COMBO' : 'CREATE COMBO')}
                 </button>
               </div>
             </form>

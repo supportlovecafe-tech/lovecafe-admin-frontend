@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../lib/config';
 import { Plus, Coffee, Tag, DollarSign, Image as ImageIcon, Search, Trash2, Edit2, CheckCircle, X, Upload, Loader2, Download, Settings, Check, AlertCircle } from 'lucide-react';
 import { Database } from '../lib/database.types';
+import { compressImage, validateImageUrl } from '../lib/imageUtils';
 
 type FoodItem = Database['public']['Tables']['food_items']['Row'] & {
   cinemas?: { name: string } | null;
@@ -98,6 +99,7 @@ export default function MenuManager({ user }: { user: any }) {
   const [cinemas, setCinemas] = useState<Cinema[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [imageWarning, setImageWarning] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Custom Categories list with local storage backup
@@ -537,7 +539,7 @@ export default function MenuManager({ user }: { user: any }) {
         await fetch(`${API_BASE_URL}/api/menu/invalidate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cinemaId: cinemaId || user?.cinema_id })
+            body: JSON.stringify({ cinemaId: cinemaId || user?.cinema_id || 'ALL' })
         });
     } catch (e) {
         console.error("Cache invalidation failed:", e);
@@ -548,6 +550,7 @@ export default function MenuManager({ user }: { user: any }) {
     setFormData({ name: '', description: '', price: '', category: 'POPCORN', imageUrl: '', cinemaId: user?.cinema_id || '', applyGst: true, isVeg: true });
     setIsEditing(false);
     setCurrentId(null);
+    setImageWarning(null);
   };
 
   const handleOpenEdit = (item: FoodItem) => {
@@ -564,23 +567,29 @@ export default function MenuManager({ user }: { user: any }) {
         applyGst: item.apply_gst !== false,
         isVeg: item.is_veg !== false
     });
+    const check = validateImageUrl(item.image_url || '');
+    setImageWarning(check.warning || null);
     setIsEditing(true);
     setCurrentId(item.id);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const file = e.target.files?.[0];
-      if (!file) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
 
+    try {
       setUploading(true);
-      const fileExt = file.name.split('.').pop();
+      setImageWarning(null);
+
+      // Auto-compress high-res camera/phone photos to max 1200px at ~150KB
+      const compressedFile = await compressImage(file, { maxWidth: 1200, maxHeight: 1200, quality: 0.82 });
+      const fileExt = compressedFile.name.split('.').pop() || 'jpg';
       const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${fileExt}`;
       const filePath = `menu/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('images')
-        .upload(filePath, file, {
+        .upload(filePath, compressedFile, {
             cacheControl: '0',
             upsert: true
         });
@@ -592,13 +601,15 @@ export default function MenuManager({ user }: { user: any }) {
         .getPublicUrl(filePath);
 
       const url = publicUrlData.publicUrl;
-      console.log('Successfully uploaded image. Public URL:', url);
+      console.log('Successfully uploaded compressed image. Public URL:', url);
       setFormData(prev => ({ ...prev, imageUrl: url }));
     } catch (error: any) {
       console.error('Upload error:', error);
       alert('Error uploading image: ' + error.message);
     } finally {
       setUploading(false);
+      // Reset input value so re-selecting the same file fires onChange cleanly
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -618,6 +629,20 @@ export default function MenuManager({ user }: { user: any }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (uploading) {
+      alert("Please wait for the image upload to finish before saving.");
+      return;
+    }
+
+    if (formData.imageUrl) {
+      const check = validateImageUrl(formData.imageUrl);
+      if (!check.isValid) {
+        alert(check.warning || "Please enter a valid image URL.");
+        return;
+      }
+    }
+
     setLoading(true);
     // Force all newly created or updated items to be global to share the same menu across all outlets
     const targetCinemaId = ''; // user?.role === 'OUTLET_MANAGER' ? user.cinema_id : formData.cinemaId;
@@ -936,8 +961,19 @@ export default function MenuManager({ user }: { user: any }) {
                             className="input-premium" 
                             placeholder="https://..." 
                             value={formData.imageUrl} 
-                            onChange={e => setFormData({...formData, imageUrl: e.target.value.trim()})} 
+                            onChange={e => {
+                              const val = e.target.value.trim();
+                              setFormData(prev => ({ ...prev, imageUrl: val }));
+                              const check = validateImageUrl(val);
+                              setImageWarning(check.warning || null);
+                            }} 
                           />
+                          {imageWarning && (
+                            <div style={{ fontSize: '11px', color: '#ffb36a', marginTop: '2px', display: 'flex', alignItems: 'flex-start', gap: '6px', background: 'rgba(255, 179, 106, 0.08)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255, 179, 106, 0.2)' }}>
+                              <AlertCircle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+                              <span>{imageWarning}</span>
+                            </div>
+                          )}
                         </div>
                     </div>
 
@@ -970,7 +1006,24 @@ export default function MenuManager({ user }: { user: any }) {
 
                     <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
                         {isEditing && <button type="button" onClick={resetForm} style={{ flex: 1, padding: '16px', background: 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '12px', fontWeight: 'bold' }}><X size={18} /></button>}
-                        <button type="submit" className="btn-lucrative" style={{ flex: 2, padding: '16px' }}>{isEditing ? 'UPDATE ITEM' : 'ADD TO MENU'}</button>
+                        <button 
+                          type="submit" 
+                          className="btn-lucrative" 
+                          style={{ 
+                            flex: 2, 
+                            padding: '16px',
+                            opacity: (uploading || loading) ? 0.6 : 1,
+                            cursor: (uploading || loading) ? 'not-allowed' : 'pointer'
+                          }}
+                          disabled={uploading || loading}
+                        >
+                          {uploading ? (
+                            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                              <Loader2 className="animate-spin" size={16} />
+                              <span>UPLOADING IMAGE...</span>
+                            </span>
+                          ) : isEditing ? 'UPDATE ITEM' : 'ADD TO MENU'}
+                        </button>
                     </div>
                 </form>
             </div>

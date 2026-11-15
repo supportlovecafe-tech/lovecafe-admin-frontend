@@ -55,7 +55,7 @@ export default function SystemHealthDashboard() {
 
   return (
     <div className="animate-lucrative" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h1 style={{ fontSize: '32px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '16px' }}>
             <Activity size={32} color="var(--primary-glow)" /> System Health
@@ -88,7 +88,7 @@ export default function SystemHealthDashboard() {
 
       {stats && (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '24px' }}>
             
             {/* Redis Health */}
             <div className="glass-card" style={{ padding: '32px' }}>
