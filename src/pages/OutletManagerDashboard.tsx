@@ -30,6 +30,15 @@ const getSharedAudioContext = () => {
   }
 };
 
+// ─── Shared Helpers ───
+export const safeParseItems = (itemsString: any) => {
+  try {
+    return typeof itemsString === 'string' ? JSON.parse(itemsString) : (Array.isArray(itemsString) ? itemsString : []);
+  } catch (e) {
+    return [];
+  }
+};
+
 export default function OutletManagerDashboard({ user }: { user: any }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -639,13 +648,6 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }
   };
 
-  const safeParseItems = (itemsString: any) => {
-    try {
-      return typeof itemsString === 'string' ? JSON.parse(itemsString) : (Array.isArray(itemsString) ? itemsString : []);
-    } catch (e) {
-      return [];
-    }
-  };
 
   const toggleItemStatus = async (orderId: string, itemId: string, targetStatus: 'READY' | 'DELIVERED') => {
     const order = orders.find(o => o.id === orderId);
