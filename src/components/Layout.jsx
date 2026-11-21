@@ -1,8 +1,8 @@
 import {  useState, useEffect } from 'react';
 import { navigate } from '../lib/router';
-import { LogOut, Home, Users, PieChart, Film, Coffee, Settings, Bell, KeyRound, History, Menu, X, Store, Package, Activity, Percent, Monitor, Archive, Sliders, Award, ShoppingBag } from 'lucide-react';
+import { LogOut, Lock, Home, Users, PieChart, Film, Coffee, Settings, Bell, KeyRound, History, Menu, X, Store, Package, Activity, Percent, Monitor, Archive, Sliders, Award, ShoppingBag } from 'lucide-react';
 
-export default function Layout({ user, onLogout, currentTab, children }) {
+export default function Layout({ user, onLogout, onFullLogout, currentTab, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.matchMedia('(min-width: 1025px)').matches;
@@ -142,9 +142,66 @@ export default function Layout({ user, onLogout, currentTab, children }) {
               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>● Online</div>
             </div>
           </div>
-          <button onClick={onLogout} className="btn-lucrative" style={{ width: '100%', padding: 14, fontSize: 13 }}>
-            <LogOut size={16} /> LOGOUT
-          </button>
+          {user.role === 'SUPER_ADMIN' ? (
+            <button onClick={onFullLogout || onLogout} className="btn-lucrative" style={{ width: '100%', padding: 14, fontSize: 13 }}>
+              <LogOut size={16} /> LOGOUT
+            </button>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Primary Lock / Switch Staff button */}
+              <button 
+                onClick={onLogout} 
+                className="btn-lucrative" 
+                style={{ 
+                  width: '100%', 
+                  padding: '13px 14px', 
+                  fontSize: 13, 
+                  fontWeight: 800,
+                  letterSpacing: 0.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  borderRadius: 14,
+                  boxShadow: '0 4px 16px rgba(255, 47, 146, 0.3)'
+                }}
+                title="Lock terminal and switch staff member using PIN"
+              >
+                <Lock size={16} /> LOCK / SWITCH STAFF
+              </button>
+
+              {/* Secondary Sign Out Outlet Link */}
+              <button 
+                type="button"
+                onClick={() => {
+                  if (window.confirm("Are you sure you want to sign out this entire terminal from the outlet?")) {
+                    if (onFullLogout) onFullLogout();
+                    else onLogout();
+                  }
+                }} 
+                style={{ 
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.45)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '8px 10px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  transition: 'all 0.2s',
+                  borderRadius: 8
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#ff6b9d'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255, 255, 255, 0.45)'; }}
+                title="Full sign out from this outlet back to email login"
+              >
+                <LogOut size={13} /> Sign Out Outlet (Full Logout)
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 

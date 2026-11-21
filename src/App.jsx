@@ -42,6 +42,7 @@ function App() {
 
             if (cinema && (cinema.is_active === false || cinema.status === 'INACTIVE')) {
               localStorage.removeItem('ce_admin_profile')
+              localStorage.removeItem('ce_outlet_cinema')
               await supabase.auth.signOut().catch(() => {})
               setUserProfile(null)
               alert(`Notice: ${cinema.name || 'This outlet'} is currently in Service Mode. Access is disabled.`)
@@ -63,9 +64,17 @@ function App() {
     setUserProfile(profile)
   }
 
-  const handleLogout = () => {
+  // 1. Staff Lock: Closes current staff session, keeps outlet terminal logged in on PIN screen
+  const handleLockStaff = () => {
     localStorage.removeItem('ce_admin_profile')
-    supabase.auth.signOut().catch(() => {})
+    setUserProfile(null)
+  }
+
+  // 2. Full Terminal Logout: Clears outlet terminal session and signs out Supabase auth
+  const handleFullLogout = async () => {
+    localStorage.removeItem('ce_admin_profile')
+    localStorage.removeItem('ce_outlet_cinema')
+    await supabase.auth.signOut().catch(() => {})
     setUserProfile(null)
   }
 
@@ -87,7 +96,7 @@ function App() {
           const updated = payload.new
           if (updated && (updated.is_active === false || updated.status === 'INACTIVE')) {
             alert(`Notice: Outlet (${updated.name || 'Current Outlet'}) has been switched to Service Mode. You have been logged out.`)
-            handleLogout()
+            handleFullLogout()
           }
         }
       )
@@ -113,22 +122,28 @@ function App() {
     return <Login onLogin={handleLogin} />
   }
 
-  return <AuthenticatedApp user={userProfile} onLogout={handleLogout} />
+  return (
+    <AuthenticatedApp 
+      user={userProfile} 
+      onLogout={userProfile.role === 'SUPER_ADMIN' ? handleFullLogout : handleLockStaff} 
+      onFullLogout={handleFullLogout} 
+    />
+  )
 }
 
-function AuthenticatedApp({ user, onLogout }) {
+function AuthenticatedApp({ user, onLogout, onFullLogout }) {
   // Set default tab based on role
   const defaultTab = user.role === 'SUPER_ADMIN' ? 'outlets' : 'dashboard'
   const currentTab = useTabRouting(defaultTab)
 
   return (
-    <Layout user={user} onLogout={onLogout} currentTab={currentTab}>
-      <TabRenderer role={user.role} user={user} currentTab={currentTab} />
+    <Layout user={user} onLogout={onLogout} onFullLogout={onFullLogout} currentTab={currentTab}>
+      <TabRenderer role={user.role} user={user} currentTab={currentTab} onLogout={onLogout} />
     </Layout>
   )
 }
 
-function TabRenderer({ role, user, currentTab }) {
+function TabRenderer({ role, user, currentTab, onLogout }) {
   if (role === 'SUPER_ADMIN') {
     switch (currentTab) {
       case 'orders':         return <Orders user={user} />
@@ -146,7 +161,7 @@ function TabRenderer({ role, user, currentTab }) {
     
     if (currentTab === 'dashboard' && (p.includes('orders') || p.includes('outlet-pos'))) return <OutletManagerDashboard user={user} />;
     if (currentTab === 'live-orders' && (p.includes('orders') || p.includes('outlet-pos'))) return <OutletManagerDashboard user={user} />;
-    if (currentTab === 'outlet-pos' && (p.includes('orders') || p.includes('outlet-pos'))) return <OutletPOS user={user} />;
+    if (currentTab === 'outlet-pos' && (p.includes('orders') || p.includes('outlet-pos'))) return <OutletPOS user={user} onLogout={onLogout} />;
     if (currentTab === 'sales' && p.includes('sales')) return <SalesDashboard user={user} />;
     if (currentTab === 'targets' && p.includes('targets')) return <TargetLeaderboard user={user} />;
     if (currentTab === 'history' && (p.includes('history') || p.includes('orders'))) return <OrderHistory user={user} />;

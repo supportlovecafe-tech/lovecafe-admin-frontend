@@ -1,4 +1,4 @@
-import {  useState, useRef } from 'react';
+import {  useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Film, Mail, Lock, LogIn, Eye, EyeOff, Wifi, Hash, ArrowLeft } from 'lucide-react';
 
@@ -7,10 +7,41 @@ export default function Login({ onLogin }) {
   const authInProgress = useRef(false);
   const [error, setError] = useState('');
 
+  // Initial read of saved cinema from localStorage for persistent terminal lock
+  const savedCinema = (() => {
+    try {
+      const saved = localStorage.getItem('ce_outlet_cinema');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  })();
+
   // PIN step state
-  const [pinStep, setPinStep] = useState(false);
-  const [matchedCinema, setMatchedCinema] = useState(null);
+  const [pinStep, setPinStep] = useState(Boolean(savedCinema));
+  const [matchedCinema, setMatchedCinema] = useState(savedCinema);
   const [pin, setPin] = useState('');
+
+  // Refresh cinema active status if already locked to an outlet terminal
+  useEffect(() => {
+    if (savedCinema && savedCinema.id) {
+      supabase
+        .from('cinemas')
+        .select('*')
+        .eq('id', savedCinema.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            localStorage.setItem('ce_outlet_cinema', JSON.stringify(data));
+            setMatchedCinema(data);
+            if (data.is_active === false || data.status === 'INACTIVE') {
+              setError(`This outlet (${data.name}) is currently in Service Mode. Login is disabled.`);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   // Email Auth State
   const [email, setEmail] = useState('');
@@ -49,6 +80,7 @@ export default function Login({ onLogin }) {
           .single();
           
         if (profile && profile.role === 'SUPER_ADMIN') {
+          localStorage.removeItem('ce_outlet_cinema');
           onLogin({ ...profile, email: data.user.email });
           return;
         }
@@ -79,6 +111,7 @@ export default function Login({ onLogin }) {
             await supabase.auth.signOut().catch(() => {});
             throw new Error(`This outlet (${cinema.name}) is currently in Service Mode. Login is disabled.`);
           }
+          localStorage.setItem('ce_outlet_cinema', JSON.stringify(cinema));
           setMatchedCinema(cinema);
           setPinStep(true);
           setLoading(false);
@@ -130,6 +163,9 @@ export default function Login({ onLogin }) {
       }
 
       const staff = staffList[0];
+      if (matchedCinema) {
+        localStorage.setItem('ce_outlet_cinema', JSON.stringify(matchedCinema));
+      }
       onLogin({
         ...staff,
         cinema_name: matchedCinema.name,
@@ -142,7 +178,15 @@ export default function Login({ onLogin }) {
     }
   };
 
-  const handleBackToLogin = () => {
+  const handleBackToLogin = async () => {
+    const confirmSignOut = window.confirm(
+      "Are you sure you want to sign out this entire terminal from the outlet?"
+    );
+    if (!confirmSignOut) return;
+
+    localStorage.removeItem('ce_outlet_cinema');
+    localStorage.removeItem('ce_admin_profile');
+    await supabase.auth.signOut().catch(() => {});
     setPinStep(false);
     setMatchedCinema(null);
     setPin('');
@@ -183,8 +227,25 @@ export default function Login({ onLogin }) {
         {/* Right: PIN Entry */}
         <div className="login-right">
           <div style={{ width: '100%', maxWidth: 420 }}>
-            <button onClick={handleBackToLogin} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', marginBottom: 32, fontSize: 13, fontWeight: 600 }}>
-              <ArrowLeft size={16} /> Back to Login
+            <button 
+              onClick={handleBackToLogin} 
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 8, 
+                background: 'none', 
+                border: 'none', 
+                color: 'var(--text-muted)', 
+                cursor: 'pointer', 
+                marginBottom: 32, 
+                fontSize: 13, 
+                fontWeight: 600,
+                transition: 'color 0.2s'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#ff6b9d'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
+            >
+              <ArrowLeft size={16} /> Sign Out Outlet (Back to Email Login)
             </button>
 
             <div style={{ marginBottom: 40 }}>

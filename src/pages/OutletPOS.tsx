@@ -4,10 +4,10 @@ import { API_BASE_URL } from '../lib/config';
 import { 
   ShoppingCart, Plus, Minus, Trash2, Printer, CheckCircle, Store, 
   Loader2, RefreshCcw, Smartphone, CreditCard, Banknote, Split, X, Search, 
-  ArrowRight, Tv, Armchair, Phone, Clock, Truck, AlertCircle
+  ArrowRight, Tv, Armchair, Phone, Clock, Truck, AlertCircle, Lock
 } from 'lucide-react';
 
-export default function OutletPOS({ user }: { user: any }) {
+export default function OutletPOS({ user, onLogout }: { user: any; onLogout?: () => void }) {
   const [foods, setFoods] = useState<any[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('All');
@@ -924,23 +924,75 @@ export default function OutletPOS({ user }: { user: any }) {
                         )}
                     </div>
                 </div>
-                <div className="pos-search-wrap">
-                    <Search size={18} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)', pointerEvents: 'none', zIndex: 1 }} />
-                    <input 
-                        type="text" 
-                        placeholder="Search menu items..." 
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        className="pos-search-input"
-                    />
-                    {searchTerm && (
-                        <button 
-                            onClick={() => setSearchTerm('')} 
-                            style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: 4 }}
-                        >
-                            <X size={16} />
-                        </button>
-                    )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    {/* Cashier Badge + Quick Lock Button */}
+                    <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '10px', 
+                        padding: '6px 8px 6px 12px', 
+                        background: 'rgba(255, 255, 255, 0.04)', 
+                        border: '1px solid rgba(255, 255, 255, 0.12)', 
+                        borderRadius: '14px' 
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{
+                                width: 26, height: 26, borderRadius: '50%',
+                                background: 'linear-gradient(135deg, var(--primary-glow), #ff6b6b)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: 12, fontWeight: 900, color: 'white'
+                            }}>
+                                {(user?.full_name || user?.name || user?.email || 'S')[0].toUpperCase()}
+                            </div>
+                            <span style={{ fontSize: '13px', fontWeight: 800, color: 'white', maxWidth: 130, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {user?.full_name || user?.name || user?.email || 'Staff'}
+                            </span>
+                        </div>
+                        {onLogout && (
+                            <button
+                                type="button"
+                                onClick={onLogout}
+                                title="Lock POS & Switch Staff"
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    padding: '5px 10px',
+                                    background: 'linear-gradient(135deg, rgba(255, 47, 146, 0.25), rgba(255, 47, 146, 0.15))',
+                                    border: '1px solid rgba(255, 47, 146, 0.45)',
+                                    borderRadius: '10px',
+                                    color: '#ff6b9d',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    letterSpacing: 0.3
+                                }}
+                                className="hover-lift"
+                            >
+                                <Lock size={12} />
+                                <span>Switch Staff</span>
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="pos-search-wrap">
+                        <Search size={18} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)', pointerEvents: 'none', zIndex: 1 }} />
+                        <input 
+                            type="text" 
+                            placeholder="Search menu items..." 
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            className="pos-search-input"
+                        />
+                        {searchTerm && (
+                            <button 
+                                onClick={() => setSearchTerm('')} 
+                                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: 4 }}
+                            >
+                                <X size={16} />
+                            </button>
+                        )}
+                    </div>
                 </div>
             </header>
 
