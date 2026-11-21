@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, Clock, ShoppingBag, MessageSquare, Send, X, User, Phone, Power, Info, CreditCard, Monitor, ListFilter, Volume2, VolumeX, AlertTriangle, Pin, Lock, Unlock, KeyRound, Smartphone, ToggleLeft, ToggleRight } from 'lucide-react';
+import { CheckCircle, Clock, ShoppingBag, MessageSquare, Send, X, User, Phone, Power, Info, CreditCard, Monitor, ListFilter, Volume2, VolumeX, AlertTriangle, Pin, Lock, Unlock, KeyRound, Smartphone, ToggleLeft, ToggleRight, Save, Check, Loader2 } from 'lucide-react';
 import { Database } from '../lib/database.types';
 import { InventoryKillSwitch } from '../components/InventoryKillSwitch';
 import { getPaymentDisplayInfo } from '../lib/paymentUtils';
+import { API_BASE_URL } from '../lib/config';
 
 type Order = Database['public']['Tables']['orders']['Row'] & {
   customer_profiles?: { first_name: string; last_name: string } | null;
@@ -2561,7 +2562,10 @@ function EmptyState({ type }: { type?: string }) {
 
 function PaymentConfigModal({ cinemaId, onClose }: { cinemaId: string; onClose: () => void }) {
   const [methods, setMethods] = useState<string[]>([]);
+  const [initialMethods, setInitialMethods] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     fetchMethods();
@@ -2569,62 +2573,291 @@ function PaymentConfigModal({ cinemaId, onClose }: { cinemaId: string; onClose: 
 
   const fetchMethods = async () => {
     setLoading(true);
-    const { data } = await supabase.from('cinemas').select('allowed_payment_methods').eq('id', cinemaId).single();
-    if (data?.allowed_payment_methods) {
-      setMethods(data.allowed_payment_methods as string[]);
-    } else {
+    setStatusMessage(null);
+    try {
+      const { data, error } = await supabase
+        .from('cinemas')
+        .select('allowed_payment_methods')
+        .eq('id', cinemaId)
+        .single();
+
+      if (error) throw error;
+
+      if (data?.allowed_payment_methods && Array.isArray(data.allowed_payment_methods)) {
+        setMethods(data.allowed_payment_methods as string[]);
+        setInitialMethods(data.allowed_payment_methods as string[]);
+      } else {
+        const defaultMethods = ['DEMO_UPI', 'DEMO_CARD', 'PAY_ON_DELIVERY', 'PAY_LATER'];
+        setMethods(defaultMethods);
+        setInitialMethods(defaultMethods);
+      }
+    } catch (e: any) {
+      console.error('Error fetching payment methods:', e);
+      setStatusMessage({ type: 'error', text: 'Failed to load payment options. Using defaults.' });
       setMethods(['DEMO_UPI', 'DEMO_CARD', 'PAY_ON_DELIVERY', 'PAY_LATER']);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const toggleMethod = async (method: string) => {
-    let newMethods = [...methods];
-    if (newMethods.includes(method)) {
-      newMethods = newMethods.filter(m => m !== method);
-    } else {
-      newMethods.push(method);
-    }
-    if (newMethods.length === 0) {
-      alert("You must leave at least one payment method enabled.");
+  const handleToggle = (methodId: string) => {
+    setStatusMessage(null);
+    setMethods(prev => {
+      if (prev.includes(methodId)) {
+        return prev.filter(m => m !== methodId);
+      } else {
+        return [...prev, methodId];
+      }
+    });
+  };
+
+  const handleSave = async () => {
+    if (methods.length === 0) {
+      setStatusMessage({ type: 'error', text: 'You must select at least one active payment method.' });
       return;
     }
-    setMethods(newMethods);
-    await supabase.from('cinemas').update({ allowed_payment_methods: newMethods }).eq('id', cinemaId);
+
+    setSaving(true);
+    setStatusMessage(null);
+
+    let saved = false;
+
+    // 1. Try Supabase RPC first
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('update_outlet_payment_methods', {
+        p_cinema_id: cinemaId,
+        p_methods: methods
+      });
+      if (!rpcErr && rpcData) {
+        saved = true;
+      }
+    } catch (_) {}
+
+    // 2. Try direct Supabase update if RPC not present/failed
+    if (!saved) {
+      try {
+        const { data: directData, error: directErr } = await supabase
+          .from('cinemas')
+          .update({ 
+            allowed_payment_methods: methods,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', cinemaId)
+          .select('allowed_payment_methods');
+
+        if (!directErr && directData && directData.length > 0) {
+          saved = true;
+        }
+      } catch (_) {}
+    }
+
+    // 3. Try Backend API route as reliable server-side fallback
+    if (!saved && API_BASE_URL) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/admin/update-payment-methods`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cinemaId, allowedPaymentMethods: methods })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success) saved = true;
+        }
+      } catch (_) {}
+    }
+
+    setSaving(false);
+
+    if (saved) {
+      setInitialMethods([...methods]);
+      setStatusMessage({ type: 'success', text: '✓ Payment options saved successfully! App checkout updated.' });
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    } else {
+      setStatusMessage({ 
+        type: 'error', 
+        text: 'Failed to save to database. Please run the SQL migration or check server connection.' 
+      });
+    }
   };
 
+  const PAYMENT_OPTIONS = [
+    {
+      id: 'DEMO_UPI',
+      label: 'UPI (QR & Apps)',
+      desc: 'Google Pay, PhonePe, Paytm, BHIM instant UPI',
+      icon: '📱'
+    },
+    {
+      id: 'DEMO_CARD',
+      label: 'Credit / Debit Card',
+      desc: 'Visa, MasterCard, RuPay card payments',
+      icon: '💳'
+    },
+    {
+      id: 'PAY_ON_DELIVERY',
+      label: 'Pay on Delivery (Cash)',
+      desc: 'Customers pay cash when food is delivered to seat',
+      icon: '💵'
+    },
+    {
+      id: 'PAY_LATER',
+      label: 'Pay Later',
+      desc: 'Collect payment at the counter before delivery',
+      icon: '⏱️'
+    }
+  ];
+
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-      <div className="glass-card" style={{ width: '100%', maxWidth: '400px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0, color: '#FF9800' }}>Payment Configuration</h3>
-          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'white', cursor: 'pointer', padding: '8px', borderRadius: '10px' }}><X size={20} /></button>
-        </div>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+      <div className="glass-card" style={{ width: '100%', maxWidth: '440px', padding: '28px', display: 'flex', flexDirection: 'column', gap: '20px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 20px 50px rgba(0,0,0,0.6)' }}>
         
-        {loading ? (
-          <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {[
-              { id: 'DEMO_UPI', label: 'UPI' },
-              { id: 'DEMO_CARD', label: 'Card' },
-              { id: 'PAY_ON_DELIVERY', label: 'Pay on Delivery' },
-              { id: 'PAY_LATER', label: 'Pay Later' }
-            ].map(m => (
-              <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '12px' }}>
-                <span style={{ fontWeight: 'bold' }}>{m.label}</span>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={methods.includes(m.id)} 
-                    onChange={() => toggleMethod(m.id)} 
-                    style={{ width: '20px', height: '20px', accentColor: '#FF9800' }} 
-                  />
-                </label>
-              </div>
-            ))}
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#FF9800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CreditCard size={22} color="#FF9800" />
+              Accepted Payment Options
+            </h3>
+            <p style={{ margin: '6px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
+              Choose which payment modes are accepted in the customer app.
+            </p>
+          </div>
+          <button 
+            type="button"
+            onClick={onClose} 
+            style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: 'white', cursor: 'pointer', padding: '8px', borderRadius: '10px', display: 'flex' }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Status notification */}
+        {statusMessage && (
+          <div style={{
+            padding: '12px 14px',
+            borderRadius: '12px',
+            fontSize: '13px',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: statusMessage.type === 'success' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+            border: statusMessage.type === 'success' ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)',
+            color: statusMessage.type === 'success' ? '#4ade80' : '#f87171'
+          }}>
+            {statusMessage.type === 'success' ? <Check size={16} /> : <AlertTriangle size={16} />}
+            <span>{statusMessage.text}</span>
           </div>
         )}
+
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
+            <Loader2 className="animate-spin" size={28} style={{ margin: '0 auto 12px', color: '#FF9800' }} />
+            <p style={{ margin: 0, fontSize: '14px' }}>Loading payment settings...</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {PAYMENT_OPTIONS.map(opt => {
+              const isSelected = methods.includes(opt.id);
+              return (
+                <div 
+                  key={opt.id} 
+                  onClick={() => handleToggle(opt.id)}
+                  style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    background: isSelected ? 'rgba(255, 152, 0, 0.1)' : 'rgba(255,255,255,0.03)', 
+                    border: isSelected ? '1.5px solid rgba(255, 152, 0, 0.45)' : '1px solid rgba(255,255,255,0.08)',
+                    padding: '14px 16px', 
+                    borderRadius: '14px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '22px' }}>{opt.icon}</span>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: '14px', color: isSelected ? '#ffffff' : 'rgba(255,255,255,0.7)' }}>
+                        {opt.label}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {opt.desc}
+                      </div>
+                    </div>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={isSelected} 
+                    onChange={() => {}} // handled by parent onClick
+                    style={{ width: '20px', height: '20px', accentColor: '#FF9800', cursor: 'pointer', flexShrink: 0 }} 
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Action Buttons: Cancel & SAVE */}
+        <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            style={{
+              flex: 1,
+              padding: '14px',
+              borderRadius: '14px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              color: 'var(--text-muted)',
+              fontSize: '14px',
+              fontWeight: 700,
+              cursor: saving ? 'not-allowed' : 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || loading}
+            className="hover-lift"
+            style={{
+              flex: 1.6,
+              padding: '14px',
+              borderRadius: '14px',
+              background: 'linear-gradient(135deg, #FF9800 0%, #FF5722 100%)',
+              border: 'none',
+              color: '#ffffff',
+              fontSize: '14px',
+              fontWeight: 800,
+              letterSpacing: '0.5px',
+              cursor: saving || loading ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.7 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 18px rgba(255, 152, 0, 0.4)'
+            }}
+          >
+            {saving ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <Save size={18} />
+                <span>SAVE CHANGES</span>
+              </>
+            )}
+          </button>
+        </div>
+
       </div>
     </div>
   );
