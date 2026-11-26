@@ -26,13 +26,29 @@ function App() {
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Check for persisted session in localStorage and verify outlet active status
+  // Check for persisted session in localStorage and verify active Supabase Auth + outlet status
   useEffect(() => {
     const checkSession = async () => {
       const saved = localStorage.getItem('ce_admin_profile')
       if (saved) {
         try {
           const parsed = JSON.parse(saved)
+
+          // Ensure a valid authenticated Supabase session exists; otherwise mutations (e.g. KDS updates) fail as anon
+          let { data: { session } } = await supabase.auth.getSession()
+          if (!session) {
+            const { data: refreshed } = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } }))
+            session = refreshed?.session || null
+          }
+
+          if (!session) {
+            localStorage.removeItem('ce_admin_profile')
+            localStorage.removeItem('ce_outlet_cinema')
+            setUserProfile(null)
+            setLoading(false)
+            return
+          }
+
           if (parsed && parsed.role !== 'SUPER_ADMIN' && parsed.cinema_id) {
             const { data: cinema } = await supabase
               .from('cinemas')
@@ -57,6 +73,18 @@ function App() {
     }
 
     checkSession()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        localStorage.removeItem('ce_admin_profile')
+        localStorage.removeItem('ce_outlet_cinema')
+        setUserProfile(null)
+      }
+    })
+
+    return () => {
+      subscription?.unsubscribe()
+    }
   }, [])
 
   const handleLogin = (profile) => {

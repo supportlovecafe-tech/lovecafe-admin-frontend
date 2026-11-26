@@ -60,11 +60,13 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState<string | number>('NO_ASSIGNED_KDS');
   const [mobileQueueFilter, setMobileQueueFilter] = useState<'ALL' | 'PENDING' | 'PREPARING' | 'READY'>('ALL');
 
-  // PIN Lock State (Used only when JWT session expires and requires re-auth)
+  // PIN Lock State (Used when JWT session expires and requires re-auth)
   const [isPinLocked, setIsPinLocked] = useState(false);
+  const [sessionNeedsRelogin, setSessionNeedsRelogin] = useState(false);
   const [lockPin, setLockPin] = useState('');
   const [pinError, setPinError] = useState('');
   const [pinVerifying, setPinVerifying] = useState(false);
+  const [kdsError, setKdsError] = useState<string | null>(null);
 
   const [soundEnabled, setSoundEnabled] = useState(false);
   const soundEnabledRef = React.useRef(soundEnabled);
@@ -127,17 +129,18 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
 
     setUpdatingOnlineOrder(true);
     try {
-      const { error: updateErr } = await supabase
+      const { data: updateData, error: updateErr } = await supabase
         .from('cinemas')
         .update({ is_online_order_enabled: nextState })
-        .eq('id', user.cinema_id);
+        .eq('id', user.cinema_id)
+        .select('id');
 
-      if (updateErr) {
+      if (updateErr || !updateData || updateData.length === 0) {
         const { error: rpcErr } = await supabase.rpc('toggle_outlet_online_orders', {
           p_cinema_id: user.cinema_id,
           p_enabled: nextState
         });
-        if (rpcErr) throw rpcErr;
+        if (rpcErr) throw (updateErr || rpcErr);
       }
 
       setIsOnlineOrderEnabled(nextState);
@@ -314,7 +317,6 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
 
       if (orderSubscription) supabase.removeChannel(orderSubscription);
       if (msgSubscription) supabase.removeChannel(msgSubscription);
-      if (cinemaSubscription) supabase.removeChannel(cinemaSubscription);
 
       orderSubscription = supabase
         .channel(`kds_orders_channel_${user.cinema_id || 'all'}_${Date.now()}`)
@@ -396,8 +398,111 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     }
   };
 
+  const ensureAuthSession = async (): Promise<boolean> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) return true;
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      return Boolean(refreshed?.session);
+    } catch {
+      return false;
+    }
+  };
+
+  const isAuthOrPermissionError = (err: any) => {
+    const msg = (err?.message || '').toLowerCase();
+    return (
+      err?.code === '42501' ||
+      err?.status === 401 ||
+      err?.status === 403 ||
+      msg.includes('jwt') ||
+      msg.includes('permission') ||
+      msg.includes('row-level security')
+    );
+  };
+
+  const persistOrderUpdate = async (
+    orderId: string,
+    updatePayload: Record<string, any>,
+    previousOrders: Order[],
+    actionLabel: string
+  ): Promise<boolean> => {
+    const hasSession = await ensureAuthSession();
+    if (!hasSession) {
+      setOrders(previousOrders);
+      setSessionNeedsRelogin(true);
+      setIsPinLocked(true);
+      setKdsError(`Cannot ${actionLabel}: outlet login session expired. Please sign in again.`);
+      return false;
+    }
+
+    const runUpdate = async (payload: Record<string, any>) => {
+      const res = await supabase
+        .from('orders')
+        .update(payload)
+        .eq('id', orderId)
+        .select('id, status');
+
+      if (res.error && res.error.message?.includes('delivered_by') && 'delivered_by' in payload) {
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.delivered_by;
+        return await supabase
+          .from('orders')
+          .update(fallbackPayload)
+          .eq('id', orderId)
+          .select('id, status');
+      }
+      return res;
+    };
+
+    try {
+      let { data, error } = await runUpdate(updatePayload);
+
+      if (error && isAuthOrPermissionError(error)) {
+        const { data: refreshed } = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } }));
+        if (refreshed?.session) {
+          const retryRes = await runUpdate(updatePayload);
+          data = retryRes.data;
+          error = retryRes.error;
+        }
+      }
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        console.error(`[KDS] Order update affected 0 rows for ${orderId} (${actionLabel})`);
+        setOrders(previousOrders);
+        setKdsError(`Unable to ${actionLabel}: your account lacks permission for this outlet or the order no longer exists. Try signing out and back in.`);
+        return false;
+      }
+
+      setKdsError(null);
+      return true;
+    } catch (e: any) {
+      console.error(`Failed to ${actionLabel}:`, e);
+      setOrders(previousOrders);
+      if (isAuthOrPermissionError(e)) {
+        const sessionOk = await ensureAuthSession();
+        if (!sessionOk) {
+          setSessionNeedsRelogin(true);
+          setIsPinLocked(true);
+        }
+        setKdsError(`Permission error while trying to ${actionLabel}. Please sign out of the outlet terminal and sign back in.`);
+      } else {
+        setKdsError(`Failed to ${actionLabel}: ${e?.message || 'Unknown error'}`);
+      }
+      return false;
+    }
+  };
+
   const fetchOrders = async () => {
     try {
+      const hasSession = await ensureAuthSession();
+      if (!hasSession) {
+        setSessionNeedsRelogin(true);
+        setIsPinLocked(true);
+      }
+
       let query = supabase
         .from('orders')
         .select('*')
@@ -414,8 +519,8 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
       if (error) {
         console.warn("[KDS] Order query failed, checking session validity:", error);
         // If JWT expired or permission denied, attempt silent session refresh
-        if (error.code === '42501' || error.message?.includes('JWT') || error.message?.includes('permission')) {
-          const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+        if (isAuthOrPermissionError(error)) {
+          const { data: refreshData } = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } }));
           if (refreshData?.session) {
             const { data: retryData, error: retryErr } = await query.limit(150);
             if (!retryErr && retryData) {
@@ -423,7 +528,8 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
               return;
             }
           } else {
-            // Token expired and cannot be auto-refreshed: prompt staff for PIN unlock
+            // Token expired and cannot be auto-refreshed: prompt staff for re-auth
+            setSessionNeedsRelogin(true);
             setIsPinLocked(true);
           }
         }
@@ -481,12 +587,20 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
         return;
       }
 
-      // 2. Refresh Supabase auth session
-      await supabase.auth.refreshSession().catch(() => {});
+      // 2. Refresh/verify Supabase auth session — never unlock into an anon session
+      const sessionOk = await ensureAuthSession();
+      if (!sessionOk) {
+        setSessionNeedsRelogin(true);
+        setPinError('Outlet session expired and cannot be auto-refreshed. Click "Log out completely" below and sign in with your outlet email & password.');
+        setPinVerifying(false);
+        return;
+      }
 
       // 3. Unlock KDS and immediately reload orders
+      setSessionNeedsRelogin(false);
       setIsPinLocked(false);
       setLockPin('');
+      setKdsError(null);
       await fetchOrders();
     } catch (err: any) {
       setPinError(err.message || 'Verification failed. Try again.');
@@ -541,33 +655,16 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
 
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus, items: updatedItems, metadata: updatedMetadata } : o));
 
-    try {
-      const updatePayload: any = { 
-        status: newStatus,
-        items: updatedItems,
-        metadata: updatedMetadata
-      };
-      if (isDelivered && user?.id) {
-        updatePayload.delivered_by = user.id;
-      }
-
-      const { error } = await supabase
-        .from('orders')
-        .update(updatePayload)
-        .eq('id', orderId);
-
-      if (error) {
-        if (error.message?.includes('delivered_by')) {
-          delete updatePayload.delivered_by;
-          await supabase.from('orders').update(updatePayload).eq('id', orderId);
-        } else {
-          throw error;
-        }
-      }
-    } catch (e) {
-      console.error("Failed to update status:", e);
-      setOrders(previousOrders);
+    const updatePayload: any = { 
+      status: newStatus,
+      items: updatedItems,
+      metadata: updatedMetadata
+    };
+    if (isDelivered && user?.id) {
+      updatePayload.delivered_by = user.id;
     }
+
+    await persistOrderUpdate(orderId, updatePayload, previousOrders, `move order to ${newStatus}`);
   };
 
   const updateItemKdsStatus = async (orderId: string, itemIds: string[], nextStatus: string) => {
@@ -620,33 +717,16 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     const previousOrders = [...orders];
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, status: finalOrderStatus, metadata: updatedMetadata } : o));
 
-    try {
-      const updatePayload: any = { 
-        items: updatedItems, 
-        status: finalOrderStatus,
-        metadata: updatedMetadata
-      };
-      if (isDelivered && user?.id) {
-        updatePayload.delivered_by = user.id;
-      }
-
-      const { error } = await supabase
-        .from('orders')
-        .update(updatePayload)
-        .eq('id', orderId);
-        
-      if (error) {
-        if (error.message?.includes('delivered_by')) {
-          delete updatePayload.delivered_by;
-          await supabase.from('orders').update(updatePayload).eq('id', orderId);
-        } else {
-          throw error;
-        }
-      }
-    } catch (e) {
-      console.error("Failed to update item status:", e);
-      setOrders(previousOrders);
+    const updatePayload: any = { 
+      items: updatedItems, 
+      status: finalOrderStatus,
+      metadata: updatedMetadata
+    };
+    if (isDelivered && user?.id) {
+      updatePayload.delivered_by = user.id;
     }
+
+    await persistOrderUpdate(orderId, updatePayload, previousOrders, 'update item status');
   };
 
 
@@ -721,25 +801,12 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
     const previousOrders = [...orders];
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedItems, status: finalOrderStatus, metadata: updatedMetadata } : o));
 
-    try {
-      const updatePayload: any = { items: updatedItems, status: finalOrderStatus, metadata: updatedMetadata };
-      if (isDelivered && user?.id) {
-        updatePayload.delivered_by = user.id;
-      }
-
-      const { error } = await supabase.from('orders').update(updatePayload).eq('id', orderId);
-      if (error) {
-        if (error.message?.includes('delivered_by')) {
-          delete updatePayload.delivered_by;
-          await supabase.from('orders').update(updatePayload).eq('id', orderId);
-        } else {
-          throw error;
-        }
-      }
-    } catch (e) {
-      console.error("Failed to toggle delivery status:", e);
-      setOrders(previousOrders);
+    const updatePayload: any = { items: updatedItems, status: finalOrderStatus, metadata: updatedMetadata };
+    if (isDelivered && user?.id) {
+      updatePayload.delivered_by = user.id;
     }
+
+    await persistOrderUpdate(orderId, updatePayload, previousOrders, 'toggle item status');
   };
 
   const handleOrderSettleSuccess = (orderId: string, finalPaymentMethod: string, newMetadata: any) => {
@@ -1462,6 +1529,45 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
         )}
       </div>
 
+      {/* Error Banner for failed order status updates */}
+      {kdsError && (
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.16)',
+          border: '1.5px solid rgba(239, 68, 68, 0.6)',
+          borderRadius: '14px',
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          color: '#fecaca',
+          fontSize: '13px',
+          fontWeight: 600
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertTriangle size={18} color="#f87171" style={{ flexShrink: 0 }} />
+            <span>{kdsError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setKdsError(null)}
+            style={{
+              background: 'rgba(255,255,255,0.08)',
+              border: 'none',
+              color: '#fecaca',
+              borderRadius: '8px',
+              padding: '4px 8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+            aria-label="Dismiss error"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
       {/* Grid columns */}
       {renderColumns()}
 
@@ -1517,7 +1623,9 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
               Authentication Required
             </h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
-              Staff session expired. Enter your 4-digit staff PIN to resume live orders.
+              {sessionNeedsRelogin
+                ? 'Your outlet terminal session expired. Sign out below and log in with your outlet email & password to accept orders.'
+                : 'Staff session expired. Enter your 4-digit staff PIN to resume live orders.'}
             </p>
 
             {cinemaName && (
@@ -1683,21 +1791,26 @@ export default function OutletManagerDashboard({ user }: { user: any }) {
 
             <button
               onClick={async () => {
+                localStorage.removeItem('ce_admin_profile');
+                localStorage.removeItem('ce_outlet_cinema');
                 await supabase.auth.signOut().catch(() => {});
                 window.location.reload();
               }}
               style={{
                 marginTop: '14px',
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-muted)',
-                fontSize: '12px',
-                fontWeight: 600,
+                width: sessionNeedsRelogin ? '100%' : 'auto',
+                padding: sessionNeedsRelogin ? '12px 16px' : 0,
+                background: sessionNeedsRelogin ? 'rgba(255, 47, 146, 0.16)' : 'none',
+                border: sessionNeedsRelogin ? '1px solid rgba(255, 47, 146, 0.45)' : 'none',
+                borderRadius: sessionNeedsRelogin ? '12px' : 0,
+                color: sessionNeedsRelogin ? '#ff8ec6' : 'var(--text-muted)',
+                fontSize: sessionNeedsRelogin ? '13px' : '12px',
+                fontWeight: sessionNeedsRelogin ? 700 : 600,
                 cursor: 'pointer',
-                textDecoration: 'underline'
+                textDecoration: sessionNeedsRelogin ? 'none' : 'underline'
               }}
             >
-              Log out completely
+              {sessionNeedsRelogin ? 'Sign In with Outlet Email & Password' : 'Log out completely'}
             </button>
           </div>
         </div>
@@ -1833,12 +1946,16 @@ function OrderCard({ order, user, isPinned, onTogglePin, onSettleSuccess, hasUnr
         updateData.return_cash = 0;
       }
 
-      const { error } = await supabase
+      const { data: settledRows, error } = await supabase
         .from('orders')
         .update(updateData)
-        .eq('id', order.id);
+        .eq('id', order.id)
+        .select('id');
 
       if (error) throw error;
+      if (!settledRows || settledRows.length === 0) {
+        throw new Error('Permission denied or session expired. Please sign out and sign in again.');
+      }
       setSettledMode(mode);
       setShowDeliverySettleModal(false);
 
@@ -2139,8 +2256,11 @@ function OrderCard({ order, user, isPinned, onTogglePin, onSettleSuccess, hasUnr
                 if (returnedAmt <= 0) return;
                 const isPaid = !!order.metadata?.return_cash_paid;
                 const newMetadata = { ...(order.metadata || {}), return_cash_paid: !isPaid };
-                const { error } = await supabase.from('orders').update({ metadata: newMetadata }).eq('id', order.id);
-                if (error) console.error("Failed to update return cash status:", error);
+                const { data: updRows, error } = await supabase.from('orders').update({ metadata: newMetadata }).eq('id', order.id).select('id');
+                if (error || !updRows || updRows.length === 0) {
+                  console.error("Failed to update return cash status:", error);
+                  alert("Could not update return cash status. Please refresh or re-login.");
+                }
               }}
               style={{ 
               color: returnedAmt > 0 ? '#4ade80' : 'var(--text-muted)', 
@@ -2572,6 +2692,14 @@ function PaymentConfigModal({ cinemaId, onClose }: { cinemaId: string; onClose: 
   }, [cinemaId]);
 
   const fetchMethods = async () => {
+    if (!cinemaId || cinemaId === 'default') {
+      const defaultMethods = ['DEMO_UPI', 'DEMO_CARD', 'PAY_ON_DELIVERY', 'PAY_LATER'];
+      setMethods(defaultMethods);
+      setInitialMethods(defaultMethods);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setStatusMessage(null);
     try {
@@ -2593,7 +2721,7 @@ function PaymentConfigModal({ cinemaId, onClose }: { cinemaId: string; onClose: 
       }
     } catch (e: any) {
       console.error('Error fetching payment methods:', e);
-      setStatusMessage({ type: 'error', text: 'Failed to load payment options. Using defaults.' });
+      setStatusMessage({ type: 'error', text: `Failed to load payment options (${e?.message || 'network/auth error'}). Using defaults.` });
       setMethods(['DEMO_UPI', 'DEMO_CARD', 'PAY_ON_DELIVERY', 'PAY_LATER']);
     } finally {
       setLoading(false);
@@ -2621,34 +2749,40 @@ function PaymentConfigModal({ cinemaId, onClose }: { cinemaId: string; onClose: 
     setStatusMessage(null);
 
     let saved = false;
+    let lastError = '';
 
-    // 1. Try Supabase RPC first
+    // 1. Direct Supabase update (do NOT send updated_at — cinemas table has no updated_at column)
     try {
-      const { data: rpcData, error: rpcErr } = await supabase.rpc('update_outlet_payment_methods', {
-        p_cinema_id: cinemaId,
-        p_methods: methods
-      });
-      if (!rpcErr && rpcData) {
-        saved = true;
-      }
-    } catch (_) {}
+      const { data: directData, error: directErr } = await supabase
+        .from('cinemas')
+        .update({ allowed_payment_methods: methods })
+        .eq('id', cinemaId)
+        .select('allowed_payment_methods');
 
-    // 2. Try direct Supabase update if RPC not present/failed
+      if (!directErr && directData && directData.length > 0) {
+        saved = true;
+      } else if (directErr) {
+        lastError = directErr.message;
+      }
+    } catch (e: any) {
+      lastError = e?.message || '';
+    }
+
+    // 2. Try Supabase RPC fallback
     if (!saved) {
       try {
-        const { data: directData, error: directErr } = await supabase
-          .from('cinemas')
-          .update({ 
-            allowed_payment_methods: methods,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', cinemaId)
-          .select('allowed_payment_methods');
-
-        if (!directErr && directData && directData.length > 0) {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('update_outlet_payment_methods', {
+          p_cinema_id: cinemaId,
+          p_methods: methods
+        });
+        if (!rpcErr && rpcData) {
           saved = true;
+        } else if (rpcErr) {
+          lastError = rpcErr.message || lastError;
         }
-      } catch (_) {}
+      } catch (e: any) {
+        lastError = e?.message || lastError;
+      }
     }
 
     // 3. Try Backend API route as reliable server-side fallback
@@ -2662,8 +2796,13 @@ function PaymentConfigModal({ cinemaId, onClose }: { cinemaId: string; onClose: 
         if (res.ok) {
           const json = await res.json();
           if (json.success) saved = true;
+        } else {
+          const errJson = await res.json().catch(() => ({}));
+          if (errJson?.error) lastError = errJson.error;
         }
-      } catch (_) {}
+      } catch (e: any) {
+        lastError = e?.message || lastError;
+      }
     }
 
     setSaving(false);
@@ -2677,7 +2816,7 @@ function PaymentConfigModal({ cinemaId, onClose }: { cinemaId: string; onClose: 
     } else {
       setStatusMessage({ 
         type: 'error', 
-        text: 'Failed to save to database. Please run the SQL migration or check server connection.' 
+        text: `Failed to save to database${lastError ? `: ${lastError}` : '. Please check your login session or server connection.'}` 
       });
     }
   };

@@ -231,7 +231,11 @@ export default function OutletsManager() {
             const setupRes = await fetch(`${API_BASE_URL}/api/admin/setup-outlet-user`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: formData.loginEmail, password: formData.loginPassword })
+                body: JSON.stringify({
+                    email: formData.loginEmail,
+                    password: formData.loginPassword,
+                    ...(isEditing && currentId ? { cinemaId: currentId } : {})
+                })
             });
             const setupData = await setupRes.json();
             if (!setupRes.ok) throw new Error(setupData.error || 'Failed to setup user');
@@ -311,27 +315,40 @@ export default function OutletsManager() {
         }]).select().single();
 
         if (cinemaErr) alert(cinemaErr.message);
-        else if (formData.screens.length > 0) {
-            const screensToInsert = formData.screens.map(s => ({
-                cinema_id: cinema.id,
-                name: s.name,
-                tag: s.tag
-            }));
-            
-            try {
-                const syncRes = await fetch(`${API_BASE_URL}/api/admin/sync-screens`, {
+        else {
+            if (formData.loginEmail && formData.loginPassword && cinema?.id) {
+                fetch(`${API_BASE_URL}/api/admin/setup-outlet-user`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        cinemaId: cinema.id, 
-                        screensToInsert 
+                    body: JSON.stringify({
+                        email: formData.loginEmail,
+                        password: formData.loginPassword,
+                        cinemaId: cinema.id
                     })
-                });
-                const syncData = await syncRes.json();
-                if (!syncRes.ok) throw new Error(syncData.error || 'Failed to add screens');
-            } catch (err) {
-                console.error("Error adding screens:", err);
-                alert("Error adding screens: " + err.message);
+                }).catch((err) => console.warn('Could not link cinema_id to outlet profile:', err));
+            }
+            if (formData.screens.length > 0) {
+                const screensToInsert = formData.screens.map(s => ({
+                    cinema_id: cinema.id,
+                    name: s.name,
+                    tag: s.tag
+                }));
+                
+                try {
+                    const syncRes = await fetch(`${API_BASE_URL}/api/admin/sync-screens`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            cinemaId: cinema.id, 
+                            screensToInsert 
+                        })
+                    });
+                    const syncData = await syncRes.json();
+                    if (!syncRes.ok) throw new Error(syncData.error || 'Failed to add screens');
+                } catch (err) {
+                    console.error("Error adding screens:", err);
+                    alert("Error adding screens: " + err.message);
+                }
             }
         }
     }

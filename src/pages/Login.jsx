@@ -22,24 +22,40 @@ export default function Login({ onLogin }) {
   const [matchedCinema, setMatchedCinema] = useState(savedCinema);
   const [pin, setPin] = useState('');
 
-  // Refresh cinema active status if already locked to an outlet terminal
+  // Verify active Supabase Auth session and refresh cinema status if locked to an outlet terminal
   useEffect(() => {
     if (savedCinema && savedCinema.id) {
-      supabase
-        .from('cinemas')
-        .select('*')
-        .eq('id', savedCinema.id)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data) {
-            localStorage.setItem('ce_outlet_cinema', JSON.stringify(data));
-            setMatchedCinema(data);
-            if (data.is_active === false || data.status === 'INACTIVE') {
-              setError(`This outlet (${data.name}) is currently in Service Mode. Login is disabled.`);
+      (async () => {
+        let { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          const { data: refreshed } = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } }));
+          session = refreshed?.session || null;
+        }
+        if (!session) {
+          localStorage.removeItem('ce_outlet_cinema');
+          localStorage.removeItem('ce_admin_profile');
+          setPinStep(false);
+          setMatchedCinema(null);
+          setError('Terminal session expired. Please sign in with your outlet email and password.');
+          return;
+        }
+
+        supabase
+          .from('cinemas')
+          .select('*')
+          .eq('id', savedCinema.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (data) {
+              localStorage.setItem('ce_outlet_cinema', JSON.stringify(data));
+              setMatchedCinema(data);
+              if (data.is_active === false || data.status === 'INACTIVE') {
+                setError(`This outlet (${data.name}) is currently in Service Mode. Login is disabled.`);
+              }
             }
-          }
-        })
-        .catch(() => {});
+          })
+          .catch(() => {});
+      })();
     }
   }, []);
 
@@ -146,6 +162,21 @@ export default function Login({ onLogin }) {
     setError('');
 
     try {
+      // Ensure the terminal still holds a valid authenticated Supabase session before PIN login
+      let { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        const { data: refreshed } = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } }));
+        session = refreshed?.session || null;
+      }
+      if (!session) {
+        localStorage.removeItem('ce_outlet_cinema');
+        localStorage.removeItem('ce_admin_profile');
+        setPinStep(false);
+        setMatchedCinema(null);
+        setPin('');
+        throw new Error('Outlet session expired. Please sign in with your outlet email and password.');
+      }
+
       // Find the staff member using the secure RPC (bypasses RLS safely)
       const { data: staffList, error: staffErr } = await supabase
         .rpc('verify_staff_pin', {

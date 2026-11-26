@@ -115,6 +115,9 @@ export default function OrderHistory({ user }) {
       `⚠️ PERMANENT DELETE\n\nAre you sure you want to permanently delete order #${displayId || orderId}?\n\nThis cannot be undone.`
     );
     if (!confirmed) return;
+    await supabase.from('order_messages').delete().eq('order_id', orderId);
+    await supabase.from('inventory_transactions').delete().eq('order_id', orderId);
+    await supabase.from('loyalty_transactions').delete().eq('order_id', orderId);
     const { error } = await supabase.from('orders').delete().eq('id', orderId);
     if (error) {
       alert('Failed to delete order: ' + error.message);
